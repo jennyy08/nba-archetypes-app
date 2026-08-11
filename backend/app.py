@@ -2,6 +2,8 @@
 
 from datetime import date
 import math
+import json
+from pathlib import Path
 
 from flask import Flask, jsonify
 from flask_cors import CORS
@@ -10,6 +12,8 @@ from nba_api.stats.endpoints import leaguedashplayerstats
 
 app = Flask(__name__)
 CORS(app)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+FEATURES = ["PTS", "REB", "AST", "STL", "BLK", "TOV", "FG3A", "FG3_PCT", "OREB", "DREB", "USG_PCT", "TS_PCT", "AST_PCT"]
 
 
 def current_nba_season() -> str:
@@ -28,8 +32,8 @@ def json_value(value):
     return value
 
 
-@app.get("/api/nba-stats")
-def nba_stats():
+def fetch_nba_stats():
+    """Fetch and combine the traditional and advanced player stat tables."""
     season = current_nba_season()
 
     # LeagueDashPlayerStats returns one measure type per request. Base contains
@@ -73,7 +77,22 @@ def nba_stats():
         }
         players.append({key: json_value(value) for key, value in record.items()})
 
-    return jsonify(players)
+    return players
+
+
+@app.get("/api/nba-stats")
+def nba_stats():
+    return jsonify(fetch_nba_stats())
+
+
+@app.post("/api/refresh-static-data")
+def refresh_static_data():
+    """Refresh the static JSON file that every Next.js page reads by default."""
+    season = current_nba_season()
+    payload = {"season": season, "features": FEATURES, "players": fetch_nba_stats()}
+    output_path = PROJECT_ROOT / "public" / "data" / "players.json"
+    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return jsonify(payload)
 
 
 if __name__ == "__main__":

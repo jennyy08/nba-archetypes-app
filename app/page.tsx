@@ -7,12 +7,15 @@ import { ARCHETYPES, archetypeColor, clusterColor, FEATURE_LABELS, FEATURE_ORDER
 
 type Player = Record<string, number | string> & { name: string; team: string };
 type DataFile = { season: string; features: string[]; players: Player[] };
-type View = "explore" | "lab";
+export type AppView = "explore" | "lab";
 type RefreshState = "idle" | "loading" | "loaded" | "error";
 
 export default function Home() {
+  return <ArchetypeExperience view="explore" />;
+}
+
+export function ArchetypeExperience({ view }: { view: AppView }) {
   const [data, setData] = useState<DataFile | null>(null);
-  const [view, setView] = useState<View>("explore");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedArchetype, setSelectedArchetype] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -22,23 +25,23 @@ export default function Home() {
   const [refreshMessage, setRefreshMessage] = useState("");
 
   useEffect(() => {
-    fetch("/data/players.json").then((r) => r.json()).then((d: DataFile) => setData(d));
+    fetch("/data/players.json", { cache: "no-store" }).then((r) => r.json()).then((d: DataFile) => setData(d));
   }, []);
 
   const refreshFromNbaApi = async () => {
     setRefreshState("loading");
     setRefreshMessage("");
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_NBA_API_URL || "http://localhost:5001/api/nba-stats";
-      const response = await fetch(apiUrl);
+      const apiUrl = process.env.NEXT_PUBLIC_NBA_API_URL || "http://localhost:5001/api/refresh-static-data";
+      const response = await fetch(apiUrl, { method: "POST" });
       if (!response.ok) throw new Error(`The NBA API returned ${response.status}.`);
-      const players = await response.json();
-      if (!Array.isArray(players) || players.length === 0) throw new Error("The API did not return player data.");
-      setData({ season: "Latest NBA API data", features: FEATURE_ORDER, players });
+      const refreshedData = await response.json() as DataFile;
+      if (!Array.isArray(refreshedData.players) || refreshedData.players.length === 0) throw new Error("The API did not return player data.");
+      setData(refreshedData);
       setSelectedIndex(null);
       setSelectedArchetype(null);
       setRefreshState("loaded");
-      setRefreshMessage(`${players.length} player stat lines loaded. Download the file below to use it in deployment.`);
+      setRefreshMessage(`${refreshedData.players.length} player stat lines saved to public/data/players.json. Every page now uses this season by default.`);
     } catch (error) {
       setRefreshState("error");
       setRefreshMessage(error instanceof Error ? error.message : "Could not load the NBA API data.");
@@ -124,19 +127,15 @@ export default function Home() {
   return (
     <div className="min-h-screen court-texture">
       <header className="border-b border-court-border px-6 md:px-8 py-6">
-        <h1 className="font-display text-3xl tracking-wide text-text uppercase">NBA Player Archetypes</h1>
-        <p className="text-text-dim text-sm mt-1 max-w-3xl">
-          {data.season} season · {data.players.length} players · basketball roles with transparent, stat-based fit scores.
-        </p>
-        <div className="flex gap-2 mt-5" role="tablist" aria-label="App views">
-          {(["explore", "lab"] as View[]).map((tab) => (
-            <button key={tab} onClick={() => setView(tab)} role="tab" aria-selected={view === tab}
-              className={`rounded px-4 py-2 font-display text-sm uppercase tracking-wide border ${view === tab ? "bg-amber text-court-bg border-amber" : "border-court-border text-text-dim hover:text-text"}`}>
-              {tab === "explore" ? "Explore roles" : "Profile Lab"}
-            </button>
-          ))}
-        </div>
-        <section className="mt-4 max-w-3xl rounded-lg border border-court-border bg-court-panel px-4 py-3">
+        <div className={view === "explore" ? "max-w-[1600px] mx-auto grid gap-4 md:grid-cols-[1fr_440px] md:items-center" : "max-w-[1600px] mx-auto"}>
+          <div>
+            <p className="font-display text-xs tracking-[0.22em] text-amber uppercase">NBA player archetypes</p>
+            <h1 className="font-display text-3xl tracking-wide text-text uppercase mt-1">{view === "explore" ? "Explore Roles" : "Profile Lab"}</h1>
+            <p className="text-text-dim text-sm mt-1 max-w-3xl">
+              {view === "explore" ? `${data.season} season · ${data.players.length} players · stable, transparent role fits.` : "Experiment with the statistical inputs behind custom player groupings."}
+            </p>
+          </div>
+        {view === "explore" && <section className="rounded-lg border border-court-border bg-court-panel px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-display text-sm uppercase tracking-wide text-amber">Data refresh</span>
             <button onClick={refreshFromNbaApi} disabled={refreshState === "loading"} className="rounded border border-court-border px-3 py-1.5 text-xs text-text-dim hover:text-text hover:border-amber disabled:opacity-50">
@@ -145,9 +144,10 @@ export default function Home() {
             {refreshState === "loaded" && <button onClick={downloadCurrentData} className="rounded bg-amber px-3 py-1.5 text-xs font-medium text-court-bg hover:bg-amber-dim">Download players.json</button>}
           </div>
           <p className={`text-xs mt-2 ${refreshState === "error" ? "text-red-400" : "text-text-faint"}`}>
-            {refreshMessage || "Starts a local refresh from the Flask API, then downloads static data for Vercel."}
+            {refreshMessage || "Fetches NBA API data and saves the static file used by every page and by Vercel."}
           </p>
-        </section>
+        </section>}
+        </div>
       </header>
 
       <main className="grid grid-cols-1 lg:grid-cols-[270px_minmax(0,1fr)_310px] gap-6 p-6 md:p-8">
