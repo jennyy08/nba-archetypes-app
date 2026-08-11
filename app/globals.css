@@ -132,6 +132,7 @@ body {
 .play-canvas:active { cursor: grabbing; }
 .play-draw-tools { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
 .play-draw-tools button, .play-draw-tools select { border: 1px solid var(--color-court-border); border-radius: 0.3rem; background: var(--color-court-panel-2); color: var(--color-text-dim); padding: 0.35rem 0.5rem; font-size: 0.7rem; }
+.court-type { display: flex; align-items: center; gap: 0.3rem; color: var(--color-text-faint); font-size: 0.7rem; }
 .play-draw-tools .draw-active { background: var(--color-amber); border-color: var(--color-amber); color: var(--color-court-bg); }
 .play-draw-tools .draw-clear { margin-left: auto; }
 .ball-target { align-self: center; color: var(--color-text-faint); font-size: 0.7rem; }
