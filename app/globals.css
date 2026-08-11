@@ -134,5 +134,21 @@ body {
 .play-draw-tools button, .play-draw-tools select { border: 1px solid var(--color-court-border); border-radius: 0.3rem; background: var(--color-court-panel-2); color: var(--color-text-dim); padding: 0.35rem 0.5rem; font-size: 0.7rem; }
 .play-draw-tools .draw-active { background: var(--color-amber); border-color: var(--color-amber); color: var(--color-court-bg); }
 .play-draw-tools .draw-clear { margin-left: auto; }
+.ball-target { align-self: center; color: var(--color-text-faint); font-size: 0.7rem; }
+.play-canvas-wrap { position: relative; }
+.play-guide-backdrop { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; border-radius: 0.5rem; background: rgba(10, 8, 6, 0.86); padding: 1rem; }
+.play-guide { position: relative; width: min(100%, 720px); border: 1px solid var(--color-court-border); border-radius: 0.65rem; background: var(--color-court-panel); padding: 1.5rem; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45); }
+.play-guide-close { position: absolute; top: 0.65rem; right: 0.8rem; color: var(--color-text-dim); font-size: 1.5rem; line-height: 1; }
+.play-guide-close:hover { color: var(--color-amber); }
+.guide-steps { display: grid; gap: 0.8rem; margin-top: 1.25rem; }
+.guide-steps > div { display: grid; grid-template-columns: 92px 1fr; column-gap: 0.8rem; align-items: center; border-top: 1px solid var(--color-court-border); padding-top: 0.8rem; }
+.guide-steps h3 { font-family: var(--font-oswald); color: var(--color-text); font-size: 0.9rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.guide-steps p { grid-column: 2; color: var(--color-text-dim); font-size: 0.72rem; line-height: 1.45; margin-top: 0.2rem; }
+.guide-court { grid-row: span 2; position: relative; height: 72px; border: 1px solid #5e4429; border-radius: 0.25rem; background: #17110c; overflow: hidden; }
+.guide-dot, .guide-ball { position: absolute; display: block; border-radius: 999px; }
+.guide-dot { width: 12px; height: 12px; background: var(--color-amber); }.guide-dot.one { left: 38px; bottom: 12px; }.guide-dot.two { right: 15px; top: 17px; }
+.guide-ball { width: 7px; height: 7px; left: 41px; bottom: 15px; background: #8d5a2b; border: 1px solid #f5d7aa; }.guide-ball.moving { left: 61px; bottom: 25px; }
+.guide-route { position: absolute; width: 40px; height: 24px; left: 42px; bottom: 17px; border-top: 2px dashed #6ed3af; border-right: 2px dashed #6ed3af; border-radius: 0 100% 0 0; transform: rotate(-18deg); }
+.guide-pointer { position: absolute; color: #f2a93b; right: 7px; bottom: 4px; font-size: 1rem; }
 .play-canvas-route, .play-canvas-ball { cursor: crosshair; }
 .play-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 999px; vertical-align: middle; }
