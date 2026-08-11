@@ -107,6 +107,8 @@ body {
 .play-panel { border: 1px solid var(--color-court-border); border-radius: 0.5rem; background: var(--color-court-panel); padding: 1rem; }
 .play-heading { font-family: var(--font-oswald); color: var(--color-amber); font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .play-select { width: 100%; margin-top: 0.3rem; border: 1px solid var(--color-court-border); border-radius: 0.3rem; background: var(--color-court-panel-2); color: var(--color-text); padding: 0.45rem; font-size: 0.75rem; }
+.play-input { width: 100%; border: 1px solid var(--color-court-border); border-radius: 0.3rem; background: var(--color-court-panel-2); color: var(--color-text); padding: 0.45rem; font-size: 0.75rem; outline: none; }
+.play-input:focus { border-color: var(--color-amber); }
 .play-preset { display: block; width: 100%; border: 1px solid var(--color-court-border); border-radius: 0.35rem; color: var(--color-text-dim); padding: 0.65rem; text-align: left; font-size: 0.85rem; }
 .play-preset small { display: block; color: var(--color-text-faint); margin-top: 0.15rem; font-size: 0.7rem; }
 .play-preset:hover, .play-preset-active { color: var(--color-text); border-color: var(--color-amber); background: var(--color-court-panel-2); }
@@ -123,6 +125,14 @@ body {
 .play-button { border-radius: 0.3rem; background: var(--color-amber); color: var(--color-court-bg); padding: 0.5rem 0.75rem; font-size: 0.75rem; font-weight: 600; }
 .play-reset { border: 1px solid var(--color-court-border); border-radius: 0.3rem; color: var(--color-text-dim); padding: 0.5rem 0.75rem; font-size: 0.75rem; }
 .play-reset:hover { border-color: var(--color-amber); color: var(--color-text); }
+.saved-setup { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; border-top: 1px solid var(--color-court-border); padding-top: 0.5rem; font-size: 0.75rem; }
+.saved-action { color: var(--color-text-faint); font-size: 0.65rem; }
+.saved-action:hover { color: var(--color-amber); }
 .play-canvas { width: 100%; aspect-ratio: 1 / 1.16; display: block; border: 1px solid var(--color-court-border); border-radius: 0.5rem; touch-action: none; cursor: grab; }
 .play-canvas:active { cursor: grabbing; }
+.play-draw-tools { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
+.play-draw-tools button, .play-draw-tools select { border: 1px solid var(--color-court-border); border-radius: 0.3rem; background: var(--color-court-panel-2); color: var(--color-text-dim); padding: 0.35rem 0.5rem; font-size: 0.7rem; }
+.play-draw-tools .draw-active { background: var(--color-amber); border-color: var(--color-amber); color: var(--color-court-bg); }
+.play-draw-tools .draw-clear { margin-left: auto; }
+.play-canvas-route, .play-canvas-ball { cursor: crosshair; }
 .play-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 999px; vertical-align: middle; }
