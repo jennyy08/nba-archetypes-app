@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import ScatterPlot from "@/components/ScatterPlot";
 import { nearestNeighbors, pca2D, kMeans, scoreArchetypes, standardize } from "@/lib/stats";
 import { ARCHETYPES, archetypeColor, clusterColor, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
@@ -201,7 +202,7 @@ function LabControls({ k, setK, selectedFeatures, setSelectedFeatures }: { k: nu
 
 function PlayerPanel({ player, features, fits, neighbors, players, onSelect }: { player: Player; features: string[]; fits: { archetypeId: string; score: number }[]; neighbors: number[]; players: Player[]; onSelect: (index: number) => void }) {
   const primary = ARCHETYPES.find((archetype) => archetype.id === fits[0]?.archetypeId);
-  return <div><h2 className="font-display text-xl text-text uppercase tracking-wide">{player.name}</h2><p className="text-sm text-text-dim">{player.team} · {primary?.name}</p>{primary && <p className="text-xs text-text-faint mt-1 leading-relaxed">{primary.description}</p>}
+  return <div><h2 className="font-display text-xl text-text uppercase tracking-wide"><Link href={`/players/${encodeURIComponent(player.name)}`} className="hover:text-amber">{player.name}</Link></h2><p className="text-sm text-text-dim">{player.team} · {primary?.name}</p>{primary && <p className="text-xs text-text-faint mt-1 leading-relaxed">{primary.description}</p>}
     <p className="font-display text-sm uppercase tracking-wide text-amber mt-5 mb-2">Role fit</p><div className="space-y-2">{fits.slice(0, 3).map((fit) => { const archetype = ARCHETYPES.find((item) => item.id === fit.archetypeId)!; return <div key={fit.archetypeId}><div className="flex justify-between text-xs text-text-dim"><span>{archetype.shortName}</span><span className="tabular">{fit.score}</span></div><div className="fit-track"><div className="fit-fill" style={{ width: `${fit.score}%`, background: archetypeColor(fit.archetypeId) }} /></div></div>; })}</div>
     <table className="w-full text-sm my-5"><tbody>{features.map((feature) => <tr key={feature} className="border-t border-court-border"><td className="py-1 text-text-faint">{FEATURE_LABELS[feature]}</td><td className="py-1 text-right tabular text-text">{typeof player[feature] === "number" ? (player[feature] as number).toFixed(feature.includes("PCT") ? 3 : 1) : player[feature]}</td></tr>)}</tbody></table>
     <p className="font-display text-sm uppercase tracking-wide text-amber mb-2">Closest matches</p><ul className="space-y-1.5">{neighbors.map((index) => <li key={index}><button onClick={() => onSelect(index)} className="text-sm text-text-dim hover:text-amber text-left w-full flex justify-between"><span>{players[index].name}</span><span className="text-text-faint">{players[index].team}</span></button></li>)}</ul></div>;

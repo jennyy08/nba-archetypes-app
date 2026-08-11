@@ -11,14 +11,16 @@ const routes: Record<ActionPreset, Record<string, [number, number][]>> = {
   horns: { O1: [[50, 72], [37, 57], [25, 36]], O2: [[16, 28], [15, 17]], O3: [[84, 28], [85, 17]], O4: [[34, 43], [48, 52]], O5: [[66, 43], [55, 52]] },
 };
 
-export default function PlayCanvas({ players, preset, playing, onMove }: { players: CourtPlayer[]; preset: ActionPreset; playing: boolean; onMove: (id: string, x: number, y: number) => void }) {
+export default function PlayCanvas({ players, preset, playing, readTarget, defenseTargets, resetKey, onComplete, onMove }: { players: CourtPlayer[]; preset: ActionPreset; playing: boolean; readTarget: [number, number]; defenseTargets: Record<string, [number, number]>; resetKey: number; onComplete: () => void; onMove: (id: string, x: number, y: number) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<string | null>(null);
   const progressRef = useRef(0);
   const frameRef = useRef<number | null>(null);
+  const runsRef = useRef(0);
+
+  useEffect(() => { progressRef.current = 0; runsRef.current = 0; }, [resetKey]);
 
   useEffect(() => {
-    if (!playing) { progressRef.current = 0; }
     const canvas = canvasRef.current;
     if (!canvas) return;
     const context = canvas.getContext("2d");
@@ -48,6 +50,7 @@ export default function PlayCanvas({ players, preset, playing, onMove }: { playe
         route.forEach(([rx, ry], index) => index ? context.lineTo(x(rx), y(ry)) : context.moveTo(x(rx), y(ry))); context.stroke(); context.setLineDash([]);
       });
 
+      let handlerPosition: [number, number] = [50, 72];
       players.forEach((player) => {
         let px = player.x, py = player.y;
         const route = routes[preset][player.id];
@@ -55,14 +58,33 @@ export default function PlayCanvas({ players, preset, playing, onMove }: { playe
           const total = route.length - 1; const value = Math.min(progress * total, total); const start = route[Math.floor(value)]; const end = route[Math.min(Math.ceil(value), total)]; const fraction = value % 1;
           px = start[0] + (end[0] - start[0]) * fraction; py = start[1] + (end[1] - start[1]) * fraction;
         }
+        if (player.id === "O1") handlerPosition = [px, py];
+        if (playing && !player.offense && defenseTargets[player.id]) {
+          const target = defenseTargets[player.id]; const amount = Math.min(progress * 1.8, 1);
+          px += (target[0] - px) * amount; py += (target[1] - py) * amount;
+        }
         context.beginPath(); context.fillStyle = player.offense ? "#f2a93b" : "#68a9d6"; context.arc(x(px), y(py), 15, 0, Math.PI * 2); context.fill();
         context.strokeStyle = player.offense ? "#fff0d5" : "#d7edff"; context.lineWidth = 1; context.stroke(); context.fillStyle = "#17110c"; context.font = "600 11px sans-serif"; context.textAlign = "center"; context.textBaseline = "middle"; context.fillText(player.label, x(px), y(py));
       });
-      if (playing) { progressRef.current = (progress + 0.006) % 1; frameRef.current = requestAnimationFrame(draw); }
+      if (playing) {
+        // The ball stays with the ball handler while the action develops, then
+        // travels to the selected read during the second half of the sequence.
+        const passProgress = Math.max(0, (progress - 0.45) / 0.55); const bx = handlerPosition[0] + (readTarget[0] - handlerPosition[0]) * passProgress; const by = handlerPosition[1] + (readTarget[1] - handlerPosition[1]) * passProgress;
+        context.beginPath(); context.fillStyle = "#8d5a2b"; context.arc(x(bx), y(by), 6, 0, Math.PI * 2); context.fill(); context.strokeStyle = "#f5d7aa"; context.stroke();
+      }
+      if (playing) {
+        const nextProgress = progress + 0.006;
+        if (nextProgress >= 1) {
+          runsRef.current += 1;
+          if (runsRef.current >= 3) { progressRef.current = 1; onComplete(); return; }
+          progressRef.current = 0;
+        } else progressRef.current = nextProgress;
+        frameRef.current = requestAnimationFrame(draw);
+      }
     };
     draw();
     return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
-  }, [players, preset, playing]);
+  }, [players, preset, playing, readTarget, defenseTargets, onComplete]);
 
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => { const rect = event.currentTarget.getBoundingClientRect(); return { x: ((event.clientX - rect.left) / rect.width) * 100, y: ((event.clientY - rect.top) / rect.height) * 100 }; };
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => { const p = point(event); const hit = players.find((player) => Math.hypot(player.x - p.x, player.y - p.y) < 6); if (hit) { dragRef.current = hit.id; event.currentTarget.setPointerCapture(event.pointerId); } };
