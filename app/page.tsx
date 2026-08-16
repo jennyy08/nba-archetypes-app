@@ -9,7 +9,6 @@ import { ARCHETYPES, archetypeColor, clusterColor, FEATURE_LABELS, FEATURE_ORDER
 type Player = Record<string, number | string> & { name: string; team: string };
 type DataFile = { season: string; features: string[]; players: Player[] };
 export type AppView = "explore" | "lab";
-type RefreshState = "idle" | "loading" | "loaded" | "error";
 
 export default function Home() {
   return <ArchetypeExperience view="explore" />;
@@ -22,43 +21,10 @@ export function ArchetypeExperience({ view }: { view: AppView }) {
   const [search, setSearch] = useState("");
   const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set(FEATURE_ORDER));
   const [k, setK] = useState(7);
-  const [refreshState, setRefreshState] = useState<RefreshState>("idle");
-  const [refreshMessage, setRefreshMessage] = useState("");
 
   useEffect(() => {
     fetch("/data/players.json", { cache: "no-store" }).then((r) => r.json()).then((d: DataFile) => setData(d));
   }, []);
-
-  const refreshFromNbaApi = async () => {
-    setRefreshState("loading");
-    setRefreshMessage("");
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_NBA_API_URL || "http://localhost:5001/api/refresh-static-data";
-      const response = await fetch(apiUrl, { method: "POST" });
-      if (!response.ok) throw new Error(`The NBA API returned ${response.status}.`);
-      const refreshedData = await response.json() as DataFile;
-      if (!Array.isArray(refreshedData.players) || refreshedData.players.length === 0) throw new Error("The API did not return player data.");
-      setData(refreshedData);
-      setSelectedIndex(null);
-      setSelectedArchetype(null);
-      setRefreshState("loaded");
-      setRefreshMessage(`${refreshedData.players.length} player stat lines saved to public/data/players.json. Every page now uses this season by default.`);
-    } catch (error) {
-      setRefreshState("error");
-      setRefreshMessage(error instanceof Error ? error.message : "Could not load the NBA API data.");
-    }
-  };
-
-  const downloadCurrentData = () => {
-    if (!data) return;
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "players.json";
-    link.click();
-    URL.revokeObjectURL(url);
-  };
 
   const activeFeatures = useMemo(() => FEATURE_ORDER.filter((feature) => selectedFeatures.has(feature)), [selectedFeatures]);
 
@@ -128,26 +94,14 @@ export function ArchetypeExperience({ view }: { view: AppView }) {
   return (
     <div className="min-h-screen court-texture">
       <header className="border-b border-court-border px-6 md:px-8 py-6">
-        <div className={view === "explore" ? "max-w-[1600px] mx-auto grid gap-4 md:grid-cols-[1fr_440px] md:items-center" : "max-w-[1600px] mx-auto"}>
+        <div className="max-w-[1600px] mx-auto">
           <div>
             <p className="font-display text-xs tracking-[0.22em] text-amber uppercase">NBA player archetypes</p>
             <h1 className="font-display text-3xl tracking-wide text-text uppercase mt-1">{view === "explore" ? "Explore Roles" : "Profile Lab"}</h1>
             <p className="text-text-dim text-sm mt-1 max-w-3xl">
-              {view === "explore" ? `${data.season} season · ${data.players.length} players · stable, transparent role fits.` : "Experiment with the statistical inputs behind custom player groupings."}
+              {view === "explore" ? `${data.season} season · ${data.players.length} players.` : "Experiment with the statistical inputs behind custom player groupings."}
             </p>
           </div>
-        {view === "explore" && <section className="rounded-lg border border-court-border bg-court-panel px-4 py-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-display text-sm uppercase tracking-wide text-amber">Data refresh</span>
-            <button onClick={refreshFromNbaApi} disabled={refreshState === "loading"} className="rounded border border-court-border px-3 py-1.5 text-xs text-text-dim hover:text-text hover:border-amber disabled:opacity-50">
-              {refreshState === "loading" ? "Loading latest stats…" : "Load latest NBA stats"}
-            </button>
-            {refreshState === "loaded" && <button onClick={downloadCurrentData} className="rounded bg-amber px-3 py-1.5 text-xs font-medium text-court-bg hover:bg-amber-dim">Download players.json</button>}
-          </div>
-          <p className={`text-xs mt-2 ${refreshState === "error" ? "text-red-400" : "text-text-faint"}`}>
-            {refreshMessage || "Fetches NBA API data and saves the static file used by every page and by Vercel."}
-          </p>
-        </section>}
         </div>
       </header>
 
