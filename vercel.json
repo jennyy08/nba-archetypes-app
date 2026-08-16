@@ -3,8 +3,7 @@
   "services": {
     "frontend": {
       "root": ".",
-      "framework": "nextjs",
-      "excludeFiles": ["backend/**"]
+      "framework": "nextjs"
     }
   },
   "rewrites": [
