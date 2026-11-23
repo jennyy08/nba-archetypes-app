@@ -57,13 +57,13 @@ pip install -r requirements.txt
 python app.py
 ```
 
-With the Flask service running at `http://localhost:5001`, use **Load latest NBA stats** on the Explore Roles page. The service fetches traditional and advanced per-game statistics from `nba_api`, joins them by player ID, and saves the result to:
+With Flask running locally, refresh the data file from another terminal:
 
-```text
-public/data/players.json
+```bash
+curl --fail --silent --show-error -X POST http://localhost:5001/api/refresh-static-data -o /dev/null
 ```
 
-That JSON file is the frontend’s default data source, so Explore Roles, Compare Players, Player Profiles, and Play Lab all use the same refreshed data after reload.
+Flask fetches traditional and advanced per-game stats through `nba_api`, joins them by NBA player ID, and writes `public/data/players.json`. The frontend reads that file and calculates role scores and comparisons in the browser. This setup uses a JSON snapshot for player stats. The Vercel configuration deploys Next.js only, so publishing a fresh snapshot requires deploying the updated file.
 
 ## Project structure
 

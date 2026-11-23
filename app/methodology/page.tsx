@@ -1,56 +1,107 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { ARCHETYPES, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
-import { scoreArchetypes } from "@/lib/stats";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { ARCHETYPES, archetypeColor, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
+import { scoreArchetypes, type PlayerRecord } from "@/lib/stats";
+import styles from "./methodology.module.css";
 
-type Player = Record<string, number | string> & { name: string; team: string };
-type DataFile = { season: string; players: Player[] };
-
-const principles = [
-  ["Intentional roles", "Archetypes are weighted statistical models for recognizable basketball roles—not labels guessed from a random cluster."],
-  ["Relative fit", "Scores are percentiles within the selected season. A score of 90 means that player fits the role more strongly than most players in this data set."],
-  ["Custom groups", "In Explore Roles, choose which stats to use and k-means groups players with similar profiles. Players keep their primary role while you experiment."],
-];
+type DataFile = { season: string; players: PlayerRecord[] };
 
 export default function MethodologyPage() {
+  const [showExamples, setShowExamples] = useState(false);
   const [data, setData] = useState<DataFile | null>(null);
-  useEffect(() => { fetch("/data/players.json", { cache: "no-store" }).then((response) => response.json()).then(setData); }, []);
+  const [failed, setFailed] = useState(false);
 
-  const fits = useMemo(() => data ? scoreArchetypes(data.players, FEATURE_ORDER, ARCHETYPES) : null, [data]);
+  useEffect(() => {
+    if (!showExamples) return;
+    const controller = new AbortController();
+    fetch("/data/players.json", { cache: "no-store", signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Unable to load role examples");
+        return response.json() as Promise<DataFile>;
+      })
+      .then((file) => {
+        if (!file.players.length) throw new Error("No players found");
+        setData(file);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setFailed(true);
+      });
+    return () => controller.abort();
+  }, [showExamples]);
 
-  return <main className="min-h-[calc(100vh-4rem)] court-texture px-6 py-12 md:px-8">
-    <div className="max-w-5xl mx-auto">
-      <p className="font-display text-xs tracking-[0.22em] text-amber uppercase">How the project thinks</p>
-      <h1 className="font-display text-4xl md:text-5xl uppercase tracking-wide mt-2">Methodology &amp; roles</h1>
-      <p className="text-text-dim max-w-2xl mt-4 leading-relaxed">This project separates stable basketball-role interpretation from open-ended statistical discovery. The goal is a model that is both interactive and explainable.</p>
+  const examples = useMemo(() => {
+    if (!data) return null;
+    const scores = scoreArchetypes(data.players, FEATURE_ORDER, ARCHETYPES);
+    return Object.fromEntries(ARCHETYPES.map(({ id }) => [
+      id,
+      data.players.map((player, index) => ({
+        player,
+        score: scores[index].find((fit) => fit.archetypeId === id)!.score,
+      })).sort((a, b) => b.score - a.score).slice(0, 3),
+    ]));
+  }, [data]);
 
-      <div className="grid gap-4 mt-10 md:grid-cols-3">
-        {principles.map(([title, description], index) => <article key={title} className="bg-court-panel border border-court-border rounded-lg p-5">
-          <span className="font-display text-amber text-xl">0{index + 1}</span>
-          <h2 className="font-display uppercase tracking-wide text-xl mt-5">{title}</h2>
-          <p className="text-sm text-text-dim leading-relaxed mt-2">{description}</p>
-        </article>)}
-      </div>
+  return (
+    <main className={`scouting-page ${styles.page}`}>
+      <header className={styles.header}>
+        <h1 className="scouting-title">Methodology</h1>
+        <p className="scouting-copy">How to read player roles and comparisons.</p>
+      </header>
 
-      <section className="mt-6 bg-court-panel-2 border border-court-border rounded-lg p-6 max-w-3xl">
-        <h2 className="font-display uppercase tracking-wide text-xl text-amber">Current limitations</h2>
-        <p className="text-sm text-text-dim leading-relaxed mt-3">The current model uses available box-score and advanced summary statistics. It does not yet include player-tracking data, play-by-play context, lineup context, matchup information, or an explicit position field. These are useful future inputs—not hidden assumptions in the current scores.</p>
+      <section className={`scouting-card ${styles.intro}`} aria-labelledby="score-heading">
+        <h2 className="scouting-section-title" id="score-heading">How role fit works</h2>
+        <p className="scouting-copy">
+          Each role weights the stats that matter for that style of play. A Rim Protector, for example, gets more credit for blocks and defensive rebounds. A fit score of <strong>90</strong> puts a player around the 90th percentile for that role in the selected season.
+        </p>
       </section>
 
-      <section className="mt-16">
-        <div className="flex flex-wrap items-end justify-between gap-3 mb-6"><div><p className="font-display text-xs tracking-[0.22em] text-amber uppercase">Archetype directory</p><h2 className="font-display text-3xl uppercase tracking-wide mt-1">The ten roles</h2></div><p className="text-xs text-text-faint">{data ? `${data.season} season examples` : "Loading season examples…"}</p></div>
-        <div className="grid gap-4 md:grid-cols-2">
-          {ARCHETYPES.map((archetype) => {
-            const examples = !data || !fits ? [] : data.players.map((player, index) => ({ player, score: fits[index].find((fit) => fit.archetypeId === archetype.id)!.score })).sort((a, b) => b.score - a.score).slice(0, 3);
-            const signals = Object.entries(archetype.weights).sort(([, a], [, b]) => Math.abs(b) - Math.abs(a)).slice(0, 4);
-            return <article key={archetype.id} className="directory-card"><div><p className="font-display text-xs uppercase tracking-[0.16em] text-amber">{archetype.shortName}</p><h3 className="font-display text-2xl uppercase tracking-wide mt-1">{archetype.name}</h3><p className="text-sm text-text-dim leading-relaxed mt-2">{archetype.description}</p></div><div className="mt-5"><p className="directory-label">Key signals</p><div className="flex flex-wrap gap-1.5 mt-2">{signals.map(([feature, weight]) => <span key={feature} className="signal-chip">{weight < 0 ? "Lower " : "Higher "}{FEATURE_LABELS[feature]}</span>)}</div></div><div className="mt-5 border-t border-court-border pt-4"><p className="directory-label">Strongest current fits</p>{examples.length > 0 ? <ol className="space-y-1.5 mt-2">{examples.map(({ player, score }, index) => <li key={player.name} className="flex justify-between text-sm"><span className="text-text-dim"><span className="text-text-faint mr-2">0{index + 1}</span>{player.name} <span className="text-text-faint">{player.team}</span></span><span className="tabular text-amber">{score}</span></li>)}</ol> : <p className="text-xs text-text-faint mt-2">Calculating examples…</p>}</div></article>;
-          })}
+      <details
+        className="scouting-card scouting-disclosure"
+        onToggle={(event) => { if (event.currentTarget.open) setShowExamples(true); }}
+      >
+        <summary>The {ARCHETYPES.length} roles</summary>
+        <div className={styles.roles}>
+          {ARCHETYPES.map(({ id, name, description, weights }) => (
+            <details className={`scouting-disclosure ${styles.role}`} key={id} name="methodology-role">
+              <summary>
+                <i aria-hidden="true" style={{ "--role-color": archetypeColor(id) } as CSSProperties} />
+                <span>{name}</span>
+              </summary>
+              <div className={styles.roleBody}>
+                <p className="scouting-copy">{description}</p>
+                <h3>Key signals</h3>
+                <ul className={styles.signals}>
+                  {Object.entries(weights)
+                    .sort(([, a], [, b]) => Math.abs(b) - Math.abs(a))
+                    .slice(0, 4)
+                    .map(([feature, weight]) => <li key={feature}>{weight < 0 ? "Lower " : "Higher "}{FEATURE_LABELS[feature].toLowerCase()}</li>)}
+                </ul>
+                <h3>{data ? `Top fits in ${data.season.replace("-", "–")}` : "Top fits"}</h3>
+                {examples ? (
+                  <ul className={styles.examples}>
+                    {examples[id].map(({ player, score }) => (
+                      <li key={player.name}>
+                        <Link href={`/players/${encodeURIComponent(player.name)}`}>{player.name} <small>{player.team}</small></Link>
+                        <span className="tabular">{score}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="scouting-copy" role="status">{failed ? "Player examples couldn’t be loaded." : "Loading player examples…"}</p>}
+              </div>
+            </details>
+          ))}
         </div>
-      </section>
+      </details>
 
-      <div className="flex flex-wrap gap-3 mt-10"><Link href="/" className="rounded bg-amber px-4 py-2 text-sm font-medium text-court-bg">Explore roles</Link><Link href="/compare" className="rounded border border-court-border px-4 py-2 text-sm text-text-dim hover:text-text">Compare players</Link><Link href="/#custom-groups" className="rounded border border-court-border px-4 py-2 text-sm text-text-dim hover:text-text">Try custom groups</Link></div>
-    </div>
-  </main>;
+      <details className="scouting-card scouting-disclosure">
+        <summary>Data and limitations</summary>
+        <div className={styles.notes}>
+          <p className="scouting-copy">The app uses a saved season of NBA box-score and advanced stats. It doesn’t use player tracking, play-by-play, lineup matchups, or listed positions to assign roles.</p>
+          <p className="scouting-copy"><Link href="/#custom-groups">Custom groups</Link> lets you try a different definition of similarity using the stats you choose. Primary role scores stay the same.</p>
+        </div>
+      </details>
+    </main>
+  );
 }

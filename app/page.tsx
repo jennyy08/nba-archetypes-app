@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import ScatterPlot from "@/components/ScatterPlot";
+import { normalizePlayerName } from "@/lib/player-search";
 import { kMeans, nearestNeighbors, pca2D, scoreArchetypes, standardize, type ArchetypeResult, type PlayerRecord } from "@/lib/stats";
 import { ARCHETYPES, archetypeColor, clusterColor, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
 import styles from "./explore.module.css";
@@ -312,15 +313,11 @@ function RoleDot({ color }: { color: string }) {
   return <i className={styles.dot} aria-hidden="true" style={{ "--point-color": color } as CSSProperties} />;
 }
 
-function normalizeName(name: string) {
-  return name.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
-}
-
 function PlayerSearch({ players, onSelect }: { players: PlayerRecord[]; onSelect: (index: number) => void }) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
-  const playerIndex = useMemo(() => players.map((player, index) => ({ player, index, name: normalizeName(player.name) })), [players]);
-  const query = normalizeName(search.trim());
+  const playerIndex = useMemo(() => players.map((player, index) => ({ player, index, name: normalizePlayerName(player.name) })), [players]);
+  const query = normalizePlayerName(search.trim());
   const matches = query ? playerIndex.filter(({ name }) => name.includes(query)).slice(0, 6) : [];
 
   function choose(index: number) {

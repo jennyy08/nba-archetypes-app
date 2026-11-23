@@ -57,6 +57,7 @@ def fetch_nba_stats():
         advanced_stats = advanced_by_player.get(player["PLAYER_ID"], {})
         record = {
                 "name": player["PLAYER_NAME"],
+                "playerId": player["PLAYER_ID"],
                 "team": player["TEAM_ABBREVIATION"],
                 "age": player["AGE"],
                 "gp": player["GP"],

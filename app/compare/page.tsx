@@ -1,84 +1,302 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ARCHETYPES, archetypeColor, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
-import { scoreArchetypes, standardize } from "@/lib/stats";
+import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ARCHETYPES, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
+import { normalizePlayerName } from "@/lib/player-search";
+import { scoreArchetypes, standardize, type ArchetypeResult, type PlayerRecord } from "@/lib/stats";
+import styles from "./compare.module.css";
 
-type Player = Record<string, number | string> & { name: string; team: string };
-type DataFile = { season: string; players: Player[] };
+type DataFile = { season: string; players: PlayerRecord[] };
+type RoleRow = { id: string; name: string; left: number; right: number };
 
-const KEY_STATS = ["PTS", "REB", "AST", "FG3_PCT", "TS_PCT", "USG_PCT"];
+const KEY_STATS = [
+  { id: "PTS", label: "Points" },
+  { id: "REB", label: "Rebounds" },
+  { id: "AST", label: "Assists" },
+  { id: "FG3_PCT", label: "3-point %" },
+  { id: "TS_PCT", label: "True shooting %" },
+  { id: "USG_PCT", label: "Usage %" },
+];
 
 export default function ComparePage() {
   const [data, setData] = useState<DataFile | null>(null);
+  const [failed, setFailed] = useState(false);
   const [leftIndex, setLeftIndex] = useState<number | null>(null);
   const [rightIndex, setRightIndex] = useState<number | null>(null);
 
-  useEffect(() => { fetch("/data/players.json", { cache: "no-store" }).then((response) => response.json()).then(setData); }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/data/players.json", { cache: "no-store", signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Unable to load players");
+        return response.json() as Promise<DataFile>;
+      })
+      .then((file) => {
+        if (!file.players.length) throw new Error("No players found");
+        setData(file);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setFailed(true);
+      });
+    return () => controller.abort();
+  }, []);
 
-  const computed = useMemo(() => {
+  const stats = useMemo(() => {
     if (!data) return null;
-    const fits = scoreArchetypes(data.players, FEATURE_ORDER, ARCHETYPES);
-    const scaled = standardize(data.players.map((player) => FEATURE_ORDER.map((feature) => Number(player[feature]))));
-    return { fits, scaled };
+    return {
+      fits: scoreArchetypes(data.players, FEATURE_ORDER, ARCHETYPES),
+      scaled: standardize(data.players.map((player) => FEATURE_ORDER.map((feature) => Number(player[feature])))),
+    };
   }, [data]);
 
-  if (!data || !computed) return <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center text-text-dim font-display tracking-wide">Loading player data…</div>;
+  const players = data?.players ?? [];
+  const left = leftIndex === null ? null : players[leftIndex];
+  const right = rightIndex === null ? null : players[rightIndex];
+  const comparison = !stats || leftIndex === null || rightIndex === null ? null : buildComparison(
+    stats.fits[leftIndex], stats.fits[rightIndex], stats.scaled[leftIndex], stats.scaled[rightIndex],
+  );
+  const curry = players.findIndex((player) => player.name === "Stephen Curry");
+  const james = players.findIndex((player) => player.name === "LeBron James");
 
-  const left = leftIndex === null ? null : data.players[leftIndex];
-  const right = rightIndex === null ? null : data.players[rightIndex];
-  const leftFits = leftIndex === null ? [] : computed.fits[leftIndex];
-  const rightFits = rightIndex === null ? [] : computed.fits[rightIndex];
-  const comparison = leftIndex === null || rightIndex === null ? null : buildComparison(leftFits, rightFits, computed.scaled[leftIndex], computed.scaled[rightIndex]);
+  return (
+    <main className="scouting-page">
+      <header className={styles.header}>
+        <div>
+          <h1 className="scouting-title">Compare Players</h1>
+          <p className="scouting-copy">See how two players score, create, and fit different roles.</p>
+        </div>
+        {data && <p className={styles.season}>{data.season.replace("-", "–")} season</p>}
+      </header>
 
-  return <main className="min-h-[calc(100vh-4rem)] court-texture px-6 py-8 md:px-8">
-    <div className="max-w-[1300px] mx-auto">
-      <p className="font-display text-xs tracking-[0.22em] text-amber uppercase">Side-by-side scouting</p>
-      <h1 className="font-display text-4xl uppercase tracking-wide mt-2">Compare Players</h1>
-      <p className="text-text-dim text-sm mt-2 max-w-2xl">Choose any two players to compare their role fits and the stats behind their profiles.</p>
-
-      <section className="grid gap-4 mt-8 md:grid-cols-2">
-        <PlayerSearch title="Player one" player={left} players={data.players} onSelect={setLeftIndex} />
-        <PlayerSearch title="Player two" player={right} players={data.players} onSelect={setRightIndex} />
+      <section className={`scouting-card ${styles.matchup}`} aria-label="Choose players to compare">
+        <div className={styles.matchupGrid}>
+          <PlayerPicker side="left" player={left} players={data?.players} onSelect={setLeftIndex} />
+          <span className={styles.versus} aria-hidden="true">VS</span>
+          <PlayerPicker side="right" player={right} players={data?.players} onSelect={setRightIndex} />
+        </div>
+        {!comparison && (
+          <div className={styles.matchupFooter}>
+            <p className="scouting-copy" role="status">
+              {failed
+                ? "Player data couldn’t be loaded. Reload the page to try again."
+                : !data
+                  ? "Loading players…"
+                  : left || right ? "Choose one more player to start comparing." : "Pick any two players or start with a classic matchup."}
+            </p>
+            {!left && !right && curry >= 0 && james >= 0 && (
+              <button type="button" className={styles.example} onClick={() => { setLeftIndex(curry); setRightIndex(james); }}>
+                Try Curry vs. LeBron <span aria-hidden="true">→</span>
+              </button>
+            )}
+          </div>
+        )}
       </section>
 
-      {!comparison || !left || !right ? <div className="compare-empty mt-6">Search for two players to start the comparison.</div> : <>
-        <section className="grid gap-4 mt-6 md:grid-cols-2">
-          <InsightCard eyebrow="Most alike" title={comparison.shared.name} text={`Both players show their strongest shared fit here: ${left.name} scores ${comparison.shared.left}, while ${right.name} scores ${comparison.shared.right}.`} color={archetypeColor(comparison.shared.id)} />
-          <InsightCard eyebrow="Biggest difference" title={comparison.difference.name} text={`${comparison.difference.left > comparison.difference.right ? left.name : right.name} leads this role fit by ${comparison.difference.gap} points.`} color={archetypeColor(comparison.difference.id)} />
-        </section>
+      {left && right && comparison && (
+        <div className={styles.results}>
+          <div className={styles.insights}>
+            <article className={`scouting-card ${styles.insight}`}>
+              <p className={styles.insightLabel}>Strongest shared role</p>
+              <h2 className="scouting-section-title">{comparison.shared.name}</h2>
+              <p className="scouting-copy">Role fit scores of {comparison.shared.left} and {comparison.shared.right}.</p>
+            </article>
+            <article className={`scouting-card ${styles.insight}`}>
+              <p className={styles.insightLabel}>Biggest role gap</p>
+              <h2 className="scouting-section-title">{comparison.gap ? comparison.difference.name : "Matching role scores"}</h2>
+              <p className="scouting-copy">
+                {comparison.gap
+                  ? `${comparison.difference.left > comparison.difference.right ? left.name : right.name} leads by ${comparison.gap} ${comparison.gap === 1 ? "point" : "points"}.`
+                  : "Each role has the same score for both selections."}
+              </p>
+            </article>
+          </div>
 
-        <section className="compare-panel mt-6">
-          <div className="compare-names"><PlayerName player={left} /><span className="font-display text-text-faint">VS</span><PlayerName player={right} align="right" /></div>
-          <h2 className="compare-heading">Role fit</h2>
-          <div className="space-y-4">{comparison.roleRows.map((row) => <RoleRow key={row.id} {...row} />)}</div>
-        </section>
+          <section className={`scouting-card ${styles.stats}`} aria-labelledby="compare-stats">
+            <h2 className="scouting-section-title" id="compare-stats">Key stats</h2>
+            <table className={styles.comparisonTable}>
+              <thead>
+                <tr><th scope="col">{left.name}</th><th scope="col">Stat</th><th scope="col">{right.name}</th></tr>
+              </thead>
+              <tbody>
+                {KEY_STATS.map(({ id, label }) => (
+                  <tr key={id}>
+                    <td className="tabular">{formatStat(left[id], id)}</td>
+                    <th scope="row">{label}</th>
+                    <td className="tabular">{formatStat(right[id], id)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {comparison.largestStat && (
+              <p className="scouting-copy">Their biggest gap relative to the league is in <strong>{FEATURE_LABELS[comparison.largestStat].toLowerCase()}</strong>.</p>
+            )}
+          </section>
 
-        <section className="compare-panel mt-6">
-          <h2 className="compare-heading">Key stats</h2>
-          <div className="divide-y divide-court-border">{KEY_STATS.map((stat) => <StatRow key={stat} stat={stat} left={Number(left[stat])} right={Number(right[stat])} />)}</div>
-          <p className="text-xs text-text-faint mt-4">Largest statistical separation in this comparison: <span className="text-text">{FEATURE_LABELS[comparison.largestStat]}</span>.</p>
-        </section>
-      </>}
-    </div>
-  </main>;
+          <details className="scouting-card scouting-disclosure">
+            <summary>Role fit <small>Top six roles</small></summary>
+            <div className={styles.roleBody}>
+              <p className="scouting-copy">{left.name} on the left, {right.name} on the right.</p>
+              {comparison.roleRows.map((role) => <RoleFitRow key={role.id} role={role} />)}
+            </div>
+          </details>
+        </div>
+      )}
+    </main>
+  );
 }
 
-function PlayerSearch({ title, player, players, onSelect }: { title: string; player: Player | null; players: Player[]; onSelect: (index: number) => void }) {
+function PlayerPicker({ side, player, players, onSelect }: {
+  side: "left" | "right";
+  player: PlayerRecord | null;
+  players: PlayerRecord[] | undefined;
+  onSelect: (index: number | null) => void;
+}) {
+  const label = side === "left" ? "Player one" : "Player two";
   const [query, setQuery] = useState("");
-  const matches = query.trim() ? players.map((candidate, index) => ({ candidate, index })).filter(({ candidate }) => candidate.name.toLowerCase().includes(query.toLowerCase())).slice(0, 6) : [];
-  return <section className="compare-search"><label className="font-display text-xs text-amber uppercase tracking-wide">{title}</label><div className="flex items-center justify-between gap-3 mt-2"><span className="font-display text-xl uppercase truncate">{player ? player.name : "Choose a player"}</span>{player && <span className="text-xs text-text-faint shrink-0">{player.team}</span>}</div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name…" className="compare-input mt-3" />{matches.length > 0 && <ul className="mt-2 space-y-1">{matches.map(({ candidate, index }) => <li key={index}><button onClick={() => { onSelect(index); setQuery(""); }} className="text-sm text-text-dim hover:text-amber w-full text-left">{candidate.name} <span className="text-text-faint">({candidate.team})</span></button></li>)}</ul>}</section>;
+  const [open, setOpen] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const names = useMemo(() => (players ?? []).map((candidate, index) => ({
+    candidate, index, normalized: normalizePlayerName(candidate.name),
+  })), [players]);
+  const search = normalizePlayerName(query.trim());
+  const matches = search ? names.filter(({ normalized }) => normalized.includes(search)).slice(0, 6) : [];
+
+  function select(index: number) {
+    onSelect(index);
+    setQuery("");
+    setOpen(false);
+    input.current?.focus();
+  }
+
+  return (
+    <div className={`${styles.picker} ${side === "right" ? styles.right : ""}`}>
+      <div className={styles.playerLabel}>
+        <label htmlFor={`compare-${side}`}>{label}</label>
+        {player && (
+          <button
+            type="button"
+            className={styles.clear}
+            aria-label={`Clear ${label.toLowerCase()}`}
+            onClick={() => { onSelect(null); setQuery(""); setOpen(false); input.current?.focus(); }}
+          >×</button>
+        )}
+      </div>
+
+      <div className={styles.playerDisplay}>
+        <Portrait key={player?.name ?? side} player={player} />
+        <div className={styles.playerInfo}>
+          {player ? (
+            <h2><Link href={`/players/${encodeURIComponent(player.name)}`}>{player.name}</Link></h2>
+          ) : <p className={styles.choose}>Choose a player</p>}
+          {player && <p className={styles.team}>{player.team}</p>}
+        </div>
+      </div>
+
+      <form
+        role="search"
+        aria-label={`Find ${label.toLowerCase()}`}
+        className={styles.search}
+        onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
+        onSubmit={(event) => { event.preventDefault(); if (matches.length) select(matches[0].index); }}
+      >
+        <input
+          id={`compare-${side}`}
+          ref={input}
+          type="search"
+          placeholder={player ? "Change player" : "Search players"}
+          autoComplete="off"
+          disabled={!players}
+          value={query}
+          onFocus={() => setOpen(true)}
+          onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
+          onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
+        />
+        {open && search && (
+          <div className={styles.suggestions}>
+            {matches.length > 0 ? (
+              <ul aria-label={`${label} matches`}>
+                {matches.map(({ candidate, index }) => (
+                  <li key={index}>
+                    <button type="button" onClick={() => select(index)}>
+                      <span>{candidate.name}</span><small>{candidate.team}</small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="scouting-copy" role="status">No players found.</p>}
+          </div>
+        )}
+      </form>
+    </div>
+  );
 }
 
-function buildComparison(leftFits: { archetypeId: string; score: number }[], rightFits: { archetypeId: string; score: number }[], leftScaled: number[], rightScaled: number[]) {
-  const rows = ARCHETYPES.map((archetype) => ({ id: archetype.id, name: archetype.name, left: leftFits.find((fit) => fit.archetypeId === archetype.id)!.score, right: rightFits.find((fit) => fit.archetypeId === archetype.id)!.score }));
+function Portrait({ player }: { player: PlayerRecord | null }) {
+  const [unavailable, setUnavailable] = useState(false);
+  const id = player?.playerId;
+  const hasPhoto = typeof id === "number" && Number.isInteger(id) && id > 0 && !unavailable;
+  const initials = player?.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("");
+
+  return (
+    <div className={styles.portrait} aria-hidden="true">
+      {hasPhoto ? (
+        <Image
+          src={`https://cdn.nba.com/headshots/nba/latest/260x190/${id}.png`}
+          alt=""
+          width={260}
+          height={190}
+          unoptimized
+          loading="eager"
+          onError={() => setUnavailable(true)}
+        />
+      ) : player ? <span className={styles.initials}>{initials}</span>
+        : <span className={styles.silhouette} />}
+    </div>
+  );
+}
+
+function formatStat(value: number | string, id: string) {
+  if (value === null || value === "" || !Number.isFinite(Number(value))) return "—";
+  return id.endsWith("_PCT") ? `${(Number(value) * 100).toFixed(1)}%` : Number(value).toFixed(1);
+}
+
+function buildComparison(leftFits: ArchetypeResult[], rightFits: ArchetypeResult[], leftScaled: number[], rightScaled: number[]) {
+  const rows = ARCHETYPES.map(({ id, name }) => ({
+    id,
+    name,
+    left: leftFits.find((fit) => fit.archetypeId === id)!.score,
+    right: rightFits.find((fit) => fit.archetypeId === id)!.score,
+  }));
   const shared = rows.reduce((best, row) => Math.min(row.left, row.right) > Math.min(best.left, best.right) ? row : best);
   const difference = rows.reduce((best, row) => Math.abs(row.left - row.right) > Math.abs(best.left - best.right) ? row : best);
-  const largestStat = FEATURE_ORDER.reduce((best, feature, index) => Math.abs(leftScaled[index] - rightScaled[index]) > Math.abs(leftScaled[FEATURE_ORDER.indexOf(best)] - rightScaled[FEATURE_ORDER.indexOf(best)]) ? feature : best, FEATURE_ORDER[0]);
-  return { shared, difference: { ...difference, gap: Math.abs(difference.left - difference.right) }, largestStat, roleRows: rows.sort((a, b) => Math.max(b.left, b.right) - Math.max(a.left, a.right)).slice(0, 6) };
+  let largestStat: string | null = null;
+  let largestGap = 0;
+  for (const [index, feature] of FEATURE_ORDER.entries()) {
+    const gap = Math.abs(leftScaled[index] - rightScaled[index]);
+    if (gap > largestGap) {
+      largestGap = gap;
+      largestStat = feature;
+    }
+  }
+  return {
+    shared,
+    difference,
+    gap: Math.abs(difference.left - difference.right),
+    largestStat,
+    roleRows: rows.sort((a, b) => Math.max(b.left, b.right) - Math.max(a.left, a.right)).slice(0, 6),
+  };
 }
 
-function InsightCard({ eyebrow, title, text, color }: { eyebrow: string; title: string; text: string; color: string }) { return <article className="compare-panel"><p className="font-display text-xs uppercase tracking-wide" style={{ color }}>{eyebrow}</p><h2 className="font-display text-2xl uppercase tracking-wide mt-1">{title}</h2><p className="text-sm text-text-dim leading-relaxed mt-2">{text}</p></article>; }
-function PlayerName({ player, align = "left" }: { player: Player; align?: "left" | "right" }) { return <div className={align === "right" ? "text-right" : ""}><p className="font-display text-lg uppercase tracking-wide">{player.name}</p><p className="text-xs text-text-faint">{player.team}</p></div>; }
-function RoleRow({ id, name, left, right }: { id: string; name: string; left: number; right: number }) { const color = archetypeColor(id); return <div><div className="flex justify-between text-xs text-text-dim mb-1"><span className="tabular">{left}</span><span>{name}</span><span className="tabular">{right}</span></div><div className="grid grid-cols-[1fr_1px_1fr] gap-1 items-center"><div className="compare-bar-left"><div style={{ width: `${left}%`, background: color }} /></div><div className="h-5 bg-court-border" /><div className="compare-bar-right"><div style={{ width: `${right}%`, background: color }} /></div></div></div>; }
-function StatRow({ stat, left, right }: { stat: string; left: number; right: number }) { const decimals = stat.includes("PCT") ? 3 : 1; return <div className="grid grid-cols-3 py-2 text-sm"><span className="tabular text-text">{left.toFixed(decimals)}</span><span className="text-center text-text-faint">{FEATURE_LABELS[stat]}</span><span className="tabular text-text text-right">{right.toFixed(decimals)}</span></div>; }
+function RoleFitRow({ role: { name, left, right } }: { role: RoleRow }) {
+  return (
+    <div className={styles.roleRow}>
+      <div><span className="tabular">{left}</span><span>{name}</span><span className="tabular">{right}</span></div>
+      <div className={styles.fitBars} aria-hidden="true">
+        <span><i style={{ width: `${left}%` }} /></span>
+        <span><i style={{ width: `${right}%` }} /></span>
+      </div>
+    </div>
+  );
+}

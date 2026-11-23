@@ -1,0 +1,64 @@
+.page { max-width: 65rem; }
+.header { margin-bottom: clamp(1rem, 2.5vw, 1.75rem); }
+.header > p { margin-top: 0.65rem; }
+.page > details { margin-top: 0.75rem; }
+
+.intro {
+  display: grid;
+  gap: 0.6rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+
+.intro > p { max-width: 43rem; }
+
+.roles {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0 0.75rem 0.75rem;
+}
+
+.role { border: 1px solid var(--color-court-border); border-radius: 0.55rem; }
+
+.role > summary > i {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--role-color);
+}
+
+:global([data-theme="light"]) .role > summary > i {
+  background: color-mix(in srgb, var(--role-color) 60%, #29221b);
+}
+
+.roleBody, .notes {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.15rem 1rem 1rem;
+}
+
+.roleBody > h3 { margin-top: 0.25rem; font-size: 0.875rem; font-weight: 600; }
+
+.signals { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+.signals li {
+  border-radius: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--color-court-panel-2);
+  color: var(--color-text-dim);
+  font-size: 0.8125rem;
+}
+
+.examples li {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-top: 1px solid var(--color-court-border);
+  font-size: 0.875rem;
+}
+
+.examples a { display: inline-flex; min-height: 2.75rem; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.examples small { color: var(--color-text-faint); font-size: 0.75rem; }
+.examples a:hover, .notes a { color: var(--color-amber); text-decoration: underline; }

@@ -11,6 +11,7 @@ import PlayCanvas, {
   type Point,
   type RouteMap,
 } from "@/components/PlayCanvas";
+import { normalizePlayerName } from "@/lib/player-search";
 
 type Player = Record<string, number | string> & { name: string; team: string };
 type DataFile = { season: string; players: Player[] };
@@ -108,7 +109,10 @@ export default function PlayLabPage() {
       })
       .then((file) => {
         if (!file.players.length) throw new Error("Player data is empty");
-        setLineup(defaults.map((name, index) => file.players.find((player) => player.name === name)?.name ?? file.players[index % file.players.length].name));
+        const rosterNames = new Map(file.players.map(({ name }) => [normalizePlayerName(name), name]));
+        setLineup(defaults.map((name, index) =>
+          rosterNames.get(normalizePlayerName(name)) ?? file.players[index % file.players.length].name,
+        ));
         try {
           const stored = JSON.parse(localStorage.getItem(PLAYBOOK_KEY) || "[]");
           if (Array.isArray(stored)) setSavedSetups(stored);
