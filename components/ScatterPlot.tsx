@@ -10,6 +10,7 @@ export type PlotPoint = {
   visible: boolean;
   name: string;
   team: string;
+  role: string;
 };
 
 const GRID_COLUMNS = 8;
@@ -129,10 +130,11 @@ export default function ScatterPlot({ points, selectedIndex, neighborIndices, on
           style={{
             left: Math.min(Math.max(hovered.cx, 108), width - 108),
             top: hovered.cy,
-            transform: hovered.cy < 64 ? "translate(-50%, 12px)" : "translate(-50%, calc(-100% - 12px))",
+            transform: hovered.cy < 76 ? "translate(-50%, 12px)" : "translate(-50%, calc(-100% - 12px))",
           }}
         >
-          <span>{hovered.name}</span><small>{hovered.team}</small>
+          <div data-tooltip-player><strong>{hovered.name}</strong><small>{hovered.team}</small></div>
+          {hovered.role && <small>{hovered.role}</small>}
         </div>
       )}
     </div>

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import Link from "next/link";
 import ScatterPlot from "@/components/ScatterPlot";
 import StatsUpdated from "@/components/StatsUpdated";
-import { normalizePlayerName } from "@/lib/player-search";
+import { formatPercentile, formatPlayerStat, ROLE_FIT_EXPLANATION } from "@/lib/player-format";
+import { comparePlayerHref, normalizePlayerName } from "@/lib/player-search";
 import { kMeans, nearestNeighbors, pca2D, scoreArchetypes, standardize, type ArchetypeResult, type PlayerRecord } from "@/lib/stats";
 import { ARCHETYPES, archetypeColor, clusterColor, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
 import styles from "./explore.module.css";
@@ -12,6 +13,7 @@ import styles from "./explore.module.css";
 type DataFile = { season: string; updatedAt?: string; players: PlayerRecord[] };
 
 const DEFAULT_GROUP_COUNT = 7;
+const ROLE_NAMES = new Map(ARCHETYPES.map(({ id, name }) => [id, name]));
 const SUMMARY_STATS = [
   { feature: "PTS", label: "Points" },
   { feature: "REB", label: "Rebounds" },
@@ -111,6 +113,7 @@ export default function ExploreRolesPage() {
       const role = roleMap.roles[index];
       return {
         index, name, team, x, y,
+        role: ROLE_NAMES.get(role) ?? "",
         color: customMap ? clusterColor(customMap.groups[index]) : archetypeColor(role),
         visible: !!customMap || !selectedRole || role === selectedRole,
       };
@@ -394,6 +397,7 @@ function PlayerSummary({ player, features, fits, neighbors, players, onSelect, o
           </p>
         </div>
         <div className={styles.playerActions}>
+          <Link className={styles.profileLink} href={comparePlayerHref(player.name)}>Compare</Link>
           <Link className={styles.profileLink} href={`/players/${encodeURIComponent(player.name)}`}>Full profile <span aria-hidden="true">↗</span></Link>
           <button className={styles.close} type="button" onClick={onClear} aria-label="Clear selected player">×</button>
         </div>
@@ -402,7 +406,7 @@ function PlayerSummary({ player, features, fits, neighbors, players, onSelect, o
       <dl className={styles.quickStats} aria-label="Per-game averages">
         {SUMMARY_STATS.map(({ feature, label }) => (
           <div key={feature}>
-            <dt>{label}</dt><dd className="tabular">{Number(player[feature]).toFixed(1)}</dd>
+            <dt>{label}</dt><dd className="tabular">{formatPlayerStat(player[feature], feature)}</dd>
           </div>
         ))}
       </dl>
@@ -412,11 +416,12 @@ function PlayerSummary({ player, features, fits, neighbors, players, onSelect, o
           <summary>Role fit</summary>
           <div className={styles.detailBody}>
             <p className={styles.copy}>{primary.description}</p>
+            <p className={styles.copy}>{ROLE_FIT_EXPLANATION}</p>
             {fits.slice(0, 3).map((fit) => {
               const role = ARCHETYPES.find((item) => item.id === fit.archetypeId)!;
               return (
                 <div key={role.id}>
-                  <div className={styles.statRow}><span>{role.shortName}</span><span className="tabular">{fit.score}</span></div>
+                  <div className={styles.statRow}><span>{role.shortName}</span><span className="tabular">{formatPercentile(fit.score)}<span className="sr-only"> percentile</span></span></div>
                   <div className="fit-track" aria-hidden="true"><div className="fit-fill" style={{ width: `${fit.score}%`, background: archetypeColor(role.id) }} /></div>
                 </div>
               );
@@ -429,7 +434,7 @@ function PlayerSummary({ player, features, fits, neighbors, players, onSelect, o
             {features.map((feature) => (
               <div key={feature} className={styles.statRow}>
                 <dt>{FEATURE_LABELS[feature]}</dt>
-                <dd className="tabular">{typeof player[feature] === "number" ? player[feature].toFixed(feature.includes("PCT") ? 3 : 1) : player[feature]}</dd>
+                <dd className="tabular">{formatPlayerStat(player[feature], feature)}</dd>
               </div>
             ))}
           </dl>

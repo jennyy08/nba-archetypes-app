@@ -38,7 +38,18 @@ type SavedSetup = {
   receiverOverride?: string | null;
   courtType?: CourtType;
 };
+type BoardEdit = {
+  court: CourtPlayer[];
+  customRoutes: RouteMap;
+  ballSequence: BallSequence | null;
+  usePresetRoutes: boolean;
+  preset: ActionPreset;
+  coverage: Coverage;
+  read: string;
+  courtType: CourtType;
+};
 const PLAYBOOK_KEY = "nba-archetype-studio-playbook";
+const UNDO_LIMIT = 40;
 
 const defaults = ["Stephen Curry", "Klay Thompson", "LeBron James", "Giannis Antetokounmpo", "Nikola Jokic"];
 const initialCourt: CourtPlayer[] = [{ id: "O1", label: "1", x: 50, y: 72, offense: true }, { id: "O2", label: "2", x: 18, y: 28, offense: true }, { id: "O3", label: "3", x: 82, y: 28, offense: true }, { id: "O4", label: "4", x: 34, y: 43, offense: true }, { id: "O5", label: "5", x: 66, y: 43, offense: true }, { id: "X1", label: "X1", x: 50, y: 64, offense: false }, { id: "X2", label: "X2", x: 26, y: 31, offense: false }, { id: "X3", label: "X3", x: 74, y: 31, offense: false }, { id: "X4", label: "X4", x: 39, y: 36, offense: false }, { id: "X5", label: "X5", x: 61, y: 36, offense: false }];
@@ -107,6 +118,8 @@ export default function PlayLabPage() {
   const [ballMessage, setBallMessage] = useState("");
   const [savedSetups, setSavedSetups] = useState<SavedSetup[]>([]);
   const [playbookMessage, setPlaybookMessage] = useState("");
+  const [undoStack, setUndoStack] = useState<BoardEdit[]>([]);
+  const moveRecorded = useRef(false);
   const canvasRef = useRef<PlayCanvasHandle>(null);
   const guideRef = useRef<HTMLDialogElement>(null);
   const finishPlayback = useCallback(() => setPlayback("idle"), []);
@@ -164,27 +177,67 @@ export default function PlayLabPage() {
     X1: coverage === "switch" ? selectedRead.target : [selectedRead.target[0] + (coverage === "ice" ? -8 : 0), selectedRead.target[1] + 6] as Point,
   };
 
-  function resetPositions(nextCoverage: Coverage) {
+  function rememberBoard() {
+    const edit = { court, customRoutes, ballSequence, usePresetRoutes, preset, coverage, read, courtType };
+    setUndoStack((history) => [...history.slice(1 - UNDO_LIMIT), edit]);
+  }
+
+  function undoBoardEdit() {
+    const previous = undoStack.at(-1);
+    if (!previous) return;
     setPlayback("idle");
-    setCourt(initialCourt.map((player) => {
+    setCourt(previous.court);
+    setCustomRoutes(previous.customRoutes);
+    setBallSequence(previous.ballSequence);
+    setUsePresetRoutes(previous.usePresetRoutes);
+    setPreset(previous.preset);
+    setCoverage(previous.coverage);
+    setRead(previous.read);
+    setCourtType(previous.courtType);
+    setBallMessage("");
+    setUndoStack((history) => history.slice(0, -1));
+  }
+
+  function moveMarker(id: string, x: number, y: number) {
+    const marker = court.find((player) => player.id === id);
+    if (!marker || (marker.x === x && marker.y === y)) return;
+    if (!moveRecorded.current) {
+      rememberBoard();
+      moveRecorded.current = true;
+    }
+    setCourt((players) => players.map((player) => player.id === id ? { ...player, x, y } : player));
+  }
+
+  function resetPositions(nextCoverage: Coverage) {
+    const next = initialCourt.map((player) => {
       if (player.offense) return player;
       const [x, y] = coverageLayouts[nextCoverage][player.id];
       return { ...player, x, y };
-    }));
+    });
+    if (next.some(({ id, x, y }, index) => id !== court[index]?.id || x !== court[index]?.x || y !== court[index]?.y)) {
+      rememberBoard();
+    }
+    setPlayback("idle");
+    setCourt(next);
   }
 
   function chooseCoverage(next: Coverage) {
-    setPlayback("idle");
-    setCoverage(next);
-    setCourt((players) => players.map((player) => {
+    const nextCourt = court.map((player) => {
       if (player.offense) return player;
       const [x, y] = coverageLayouts[next][player.id];
       return { ...player, x, y };
-    }));
+    });
+    if (next !== coverage || nextCourt.some(({ x, y }, index) => x !== court[index].x || y !== court[index].y)) {
+      rememberBoard();
+    }
+    setPlayback("idle");
+    setCoverage(next);
+    setCourt(nextCourt);
   }
 
   function addPass(to: OffensiveId, path?: Point[]) {
     if (to === nextPasser(ballSequence)) return;
+    rememberBoard();
     setPlayback("idle");
     setBallSequence({
       start: ballSequence?.start ?? "O1",
@@ -196,6 +249,7 @@ export default function PlayLabPage() {
   function changeStart(start: OffensiveId) {
     const passes = ballSequence?.passes ?? [];
     const sequence = normalizeSequence(start, passes);
+    rememberBoard();
     setPlayback("idle");
     setBallSequence(sequence);
     setBallMessage(sequence.passes.length < passes.length ? "Removed a pass to the same player." : "");
@@ -205,6 +259,7 @@ export default function PlayLabPage() {
     if (!ballSequence) return;
     const passes = ballSequence.passes.filter((_, step) => step !== index);
     const sequence = normalizeSequence(ballSequence.start, passes);
+    rememberBoard();
     setPlayback("idle");
     setBallSequence(sequence);
     setBallMessage(sequence.passes.length < passes.length
@@ -214,6 +269,7 @@ export default function PlayLabPage() {
 
   function straightenPass(index: number) {
     if (!ballSequence) return;
+    rememberBoard();
     setPlayback("idle");
     setBallSequence({
       ...ballSequence,
@@ -246,6 +302,8 @@ export default function PlayLabPage() {
 
   function loadSetup(setup: SavedSetup) {
     setPlayback("idle");
+    setUndoStack([]);
+    moveRecorded.current = false;
     setLineup(OFFENSE_IDS.map((_, index) => setup.lineup[index] ?? defaults[index]));
     setCourt(setup.court);
     setPreset(setup.preset);
@@ -293,10 +351,13 @@ export default function PlayLabPage() {
                 <span><i className="play-marker play-marker-defense" /> Defense</span>
               </div>
             </div>
-            <button className="play-primary play-run" onClick={() => setPlayback(playback === "playing" ? "paused" : "playing")}>
-              <span aria-hidden="true" className={playback === "playing" ? "play-pause-icon" : "play-run-icon"} />
-              {playback === "playing" ? "Pause play" : playback === "paused" ? "Resume play" : "Run play"}
-            </button>
+            <div className="play-board-actions">
+              <button type="button" className="play-secondary" disabled={!undoStack.length} title="Undo last board edit" onClick={undoBoardEdit}>Undo</button>
+              <button type="button" className="play-primary play-run" onClick={() => setPlayback(playback === "playing" ? "paused" : "playing")}>
+                <span aria-hidden="true" className={playback === "playing" ? "play-pause-icon" : "play-run-icon"} />
+                {playback === "playing" ? "Pause play" : playback === "paused" ? "Resume play" : "Run play"}
+              </button>
+            </div>
           </header>
 
           <PlayCanvas
@@ -314,10 +375,14 @@ export default function PlayLabPage() {
             customRoutes={customRoutes}
             usePresetRoutes={usePresetRoutes}
             onComplete={finishPlayback}
-            onRoute={(id, route) => setCustomRoutes((routes) => ({ ...routes, [id]: route }))}
+            onRoute={(id, route) => {
+              rememberBoard();
+              setCustomRoutes((routes) => ({ ...routes, [id]: route }));
+            }}
             onPass={addPass}
             onPassMiss={() => setBallMessage("End the pass on a different offensive player.")}
-            onMove={(id, x, y) => setCourt((items) => items.map((item) => item.id === id ? { ...item, x, y } : item))}
+            onMove={moveMarker}
+            onMoveEnd={() => { moveRecorded.current = false; }}
           />
 
           <PlayBallControls
@@ -339,6 +404,7 @@ export default function PlayLabPage() {
               setBallMessage("");
             }}
             onReset={() => {
+              rememberBoard();
               setPlayback("idle");
               setBallSequence(null);
               setBallMessage("The selected read controls the ball.");
@@ -358,20 +424,28 @@ export default function PlayLabPage() {
               <p className="play-copy">{mode === "route" ? "Drag from an offensive marker to draw its route." : "Choose Move markers to drag players to their starting spots."}</p>
               <label className="play-check">
                 <input type="checkbox" checked={usePresetRoutes} onChange={(event) => {
+                  rememberBoard();
                   setPlayback("idle");
                   setUsePresetRoutes(event.target.checked);
                 }} />
                 Use preset offensive routes
               </label>
               <label className="play-field">Court surface
-                <select value={courtType} onChange={(event) => setCourtType(event.target.value as CourtType)}>
+                <select value={courtType} onChange={(event) => {
+                  rememberBoard();
+                  setCourtType(event.target.value as CourtType);
+                }}>
                   <option value="indoor">Indoor</option>
                   <option value="outdoor">Outdoor</option>
                 </select>
               </label>
               <div className="play-button-row">
                 <button className="play-secondary" onClick={() => resetPositions(coverage)}>Reset positions</button>
-                <button className="play-secondary" disabled={!Object.keys(customRoutes).length} onClick={() => { setPlayback("idle"); setCustomRoutes({}); }}>Clear player routes</button>
+                <button className="play-secondary" disabled={!Object.keys(customRoutes).length} onClick={() => {
+                  rememberBoard();
+                  setPlayback("idle");
+                  setCustomRoutes({});
+                }}>Clear player routes</button>
               </div>
             </div>
           </details>
@@ -384,9 +458,11 @@ export default function PlayLabPage() {
             <div className="play-options play-options-three">
               {presets.map((item) => (
                 <button key={item.id} className="play-option" aria-pressed={preset === item.id} onClick={() => {
+                  const nextRead = reads[item.id][0].id;
+                  if (item.id !== preset || nextRead !== read) rememberBoard();
                   setPlayback("idle");
                   setPreset(item.id);
-                  setRead(reads[item.id][0].id);
+                  setRead(nextRead);
                 }}>{item.title}</button>
               ))}
             </div>
@@ -406,6 +482,7 @@ export default function PlayLabPage() {
             <div className="play-reads">
               {reads[preset].map((item) => (
                 <button key={item.id} className="play-read" aria-pressed={selectedRead.id === item.id} onClick={() => {
+                  if (item.id !== read) rememberBoard();
                   setPlayback("idle");
                   setRead(item.id);
                 }}>

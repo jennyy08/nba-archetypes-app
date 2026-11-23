@@ -2,9 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import StatsUpdated from "@/components/StatsUpdated";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ARCHETYPES, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
+import { formatPercentile, formatPlayerStat, ROLE_FIT_EXPLANATION } from "@/lib/player-format";
 import { normalizePlayerName } from "@/lib/player-search";
 import { scoreArchetypes, standardize, type ArchetypeResult, type PlayerRecord } from "@/lib/stats";
 import styles from "./compare.module.css";
@@ -22,9 +24,27 @@ const KEY_STATS = [
 ];
 
 export default function ComparePage() {
+  return (
+    <Suspense fallback={
+      <main className="scouting-page">
+        <h1 className="scouting-title">Compare Players</h1>
+        <p className="scouting-copy" role="status">Loading comparison…</p>
+      </main>
+    }>
+      <CompareFromUrl />
+    </Suspense>
+  );
+}
+
+function CompareFromUrl() {
+  const player = useSearchParams().get("player")?.trim() ?? "";
+  return <CompareExperience key={player} linkedPlayer={player} />;
+}
+
+function CompareExperience({ linkedPlayer }: { linkedPlayer: string }) {
   const [data, setData] = useState<DataFile | null>(null);
   const [failed, setFailed] = useState(false);
-  const [leftIndex, setLeftIndex] = useState<number | null>(null);
+  const [leftOverride, setLeftIndex] = useState<number | null>();
   const [rightIndex, setRightIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -53,6 +73,10 @@ export default function ComparePage() {
   }, [data]);
 
   const players = data?.players ?? [];
+  const requestedName = normalizePlayerName(linkedPlayer);
+  const linkedIndex = requestedName ? players.findIndex(({ name }) => normalizePlayerName(name) === requestedName) : -1;
+  const leftIndex = leftOverride === undefined ? (linkedIndex < 0 ? null : linkedIndex) : leftOverride;
+  const unavailablePlayer = requestedName && leftOverride === undefined && linkedIndex < 0;
   const left = leftIndex === null ? null : players[leftIndex];
   const right = rightIndex === null ? null : players[rightIndex];
   const comparison = !stats || leftIndex === null || rightIndex === null ? null : buildComparison(
@@ -89,7 +113,9 @@ export default function ComparePage() {
                 ? "Player data couldn’t be loaded. Reload the page to try again."
                 : !data
                   ? "Loading players…"
-                  : left || right ? "Choose one more player to start comparing." : "Pick any two players or start with a classic matchup."}
+                  : unavailablePlayer
+                    ? "That player is unavailable in this season’s data. Choose another player to start."
+                    : left || right ? "Choose one more player to start comparing." : "Pick any two players or start with a classic matchup."}
             </p>
             {!left && !right && curry >= 0 && james >= 0 && (
               <button type="button" className={styles.example} onClick={() => { setLeftIndex(curry); setRightIndex(james); }}>
@@ -106,14 +132,14 @@ export default function ComparePage() {
             <article className={`scouting-card ${styles.insight}`}>
               <p className={styles.insightLabel}>Strongest shared role</p>
               <h2 className="scouting-section-title">{comparison.shared.name}</h2>
-              <p className="scouting-copy">Role fit scores of {comparison.shared.left} and {comparison.shared.right}.</p>
+              <p className="scouting-copy">{left.name} ranks {formatPercentile(comparison.shared.left)} and {right.name} ranks {formatPercentile(comparison.shared.right)} for this role.</p>
             </article>
             <article className={`scouting-card ${styles.insight}`}>
               <p className={styles.insightLabel}>Biggest role gap</p>
               <h2 className="scouting-section-title">{comparison.gap ? comparison.difference.name : "Matching role scores"}</h2>
               <p className="scouting-copy">
                 {comparison.gap
-                  ? `${comparison.difference.left > comparison.difference.right ? left.name : right.name} leads by ${comparison.gap} ${comparison.gap === 1 ? "point" : "points"}.`
+                  ? `${comparison.difference.left > comparison.difference.right ? left.name : right.name} leads by ${comparison.gap} percentile ${comparison.gap === 1 ? "point" : "points"}.`
                   : "Each role has the same score for both selections."}
               </p>
             </article>
@@ -128,9 +154,9 @@ export default function ComparePage() {
               <tbody>
                 {KEY_STATS.map(({ id, label }) => (
                   <tr key={id}>
-                    <td className="tabular">{formatStat(left[id], id)}</td>
+                    <td className="tabular">{formatPlayerStat(left[id], id)}</td>
                     <th scope="row">{label}</th>
-                    <td className="tabular">{formatStat(right[id], id)}</td>
+                    <td className="tabular">{formatPlayerStat(right[id], id)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -143,6 +169,7 @@ export default function ComparePage() {
           <details className="scouting-card scouting-disclosure">
             <summary>Role fit <small>Top six roles</small></summary>
             <div className={styles.roleBody}>
+              <p className="scouting-copy">{ROLE_FIT_EXPLANATION}</p>
               <p className="scouting-copy">{left.name} on the left, {right.name} on the right.</p>
               {comparison.roleRows.map((role) => <RoleFitRow key={role.id} role={role} />)}
             </div>
@@ -263,11 +290,6 @@ function Portrait({ player }: { player: PlayerRecord | null }) {
   );
 }
 
-function formatStat(value: number | string, id: string) {
-  if (value === null || value === "" || !Number.isFinite(Number(value))) return "—";
-  return id.endsWith("_PCT") ? `${(Number(value) * 100).toFixed(1)}%` : Number(value).toFixed(1);
-}
-
 function buildComparison(leftFits: ArchetypeResult[], rightFits: ArchetypeResult[], leftScaled: number[], rightScaled: number[]) {
   const rows = ARCHETYPES.map(({ id, name }) => ({
     id,
@@ -298,7 +320,11 @@ function buildComparison(leftFits: ArchetypeResult[], rightFits: ArchetypeResult
 function RoleFitRow({ role: { name, left, right } }: { role: RoleRow }) {
   return (
     <div className={styles.roleRow}>
-      <div><span className="tabular">{left}</span><span>{name}</span><span className="tabular">{right}</span></div>
+      <div>
+        <span className="tabular">{formatPercentile(left)}<span className="sr-only"> percentile</span></span>
+        <span>{name}</span>
+        <span className="tabular">{formatPercentile(right)}<span className="sr-only"> percentile</span></span>
+      </div>
       <div className={styles.fitBars} aria-hidden="true">
         <span><i style={{ width: `${left}%` }} /></span>
         <span><i style={{ width: `${right}%` }} /></span>

@@ -26,6 +26,7 @@ type Props = {
   usePresetRoutes: boolean;
   onComplete: () => void;
   onMove: (id: string, x: number, y: number) => void;
+  onMoveEnd: () => void;
   onRoute: (id: string, route: Point[]) => void;
   onPass: (id: OffensiveId, path: Point[]) => void;
   onPassMiss: () => void;
@@ -97,7 +98,7 @@ function drawCourt(context: CanvasRenderingContext2D, width: number, height: num
 
 const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
   players, preset, playback, readReceiver, ballSequence, playerNames, defenseTargets, mode, editing, courtType, customRoutes, usePresetRoutes,
-  onComplete, onMove, onRoute, onPass, onPassMiss,
+  onComplete, onMove, onMoveEnd, onRoute, onPass, onPassMiss,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const elapsed = useRef(0);
@@ -358,6 +359,7 @@ const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
   }
 
   function cancelGesture() {
+    if (gesture.current?.kind === "marker") onMoveEnd();
     gesture.current = null;
     redraw.current?.();
   }

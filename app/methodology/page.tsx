@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { ARCHETYPES, archetypeColor, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
 import { scoreArchetypes, type PlayerRecord } from "@/lib/stats";
+import { formatPercentile } from "@/lib/player-format";
 import styles from "./methodology.module.css";
 
 type DataFile = { season: string; players: PlayerRecord[] };
@@ -84,7 +85,7 @@ export default function MethodologyPage() {
                     {examples[id].map(({ player, score }) => (
                       <li key={player.name}>
                         <Link href={`/players/${encodeURIComponent(player.name)}`}>{player.name} <small>{player.team}</small></Link>
-                        <span className="tabular">{score}</span>
+                        <span className="tabular">{formatPercentile(score)}<span className="sr-only"> percentile</span></span>
                       </li>
                     ))}
                   </ul>

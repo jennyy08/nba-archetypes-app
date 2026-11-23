@@ -317,6 +317,12 @@ body {
   padding: 0.875rem clamp(0.875rem, 2vw, 1.125rem);
 }
 
+.play-board-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .play-legend {
   display: flex;
   flex-wrap: wrap;
@@ -704,4 +710,5 @@ body {
 @media (max-width: 26rem) {
   .play-canvas { aspect-ratio: 1.28; }
   .play-save-form .play-primary { min-width: 7rem; }
+  .play-run { min-width: 0; }
 }
