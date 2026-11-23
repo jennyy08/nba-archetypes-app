@@ -54,6 +54,13 @@ body {
   color: var(--color-text);
 }
 
+.stats-updated {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--color-text-faint);
+  font-size: 0.75rem;
+}
+
 .tabular {
   font-variant-numeric: tabular-nums;
   font-family: var(--font-plex-mono), monospace;
@@ -348,7 +355,7 @@ body {
 .play-canvas[data-mode] { touch-action: none; }
 .play-canvas[data-mode="move"] { cursor: grab; }
 .play-canvas[data-mode="move"]:active { cursor: grabbing; }
-.play-canvas[data-mode="route"] { cursor: crosshair; }
+.play-canvas:is([data-mode="route"], [data-mode="pass"]) { cursor: crosshair; }
 
 .play-primary,
 .play-secondary,
@@ -415,7 +422,7 @@ body {
 .play-control { min-width: 0; }
 
 .play-control legend,
-.play-tool-fields label,
+.play-field,
 .play-save-form label {
   margin-bottom: 0.4rem;
   color: var(--color-text);
@@ -527,7 +534,50 @@ body {
 }
 
 .play-tools-body { padding-inline: 0.5rem; }
-.play-tool-fields { display: grid; gap: 0.6rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.play-field { display: block; margin-bottom: 0; }
+.play-ball-tools { border-bottom: 1px solid var(--color-court-border); }
+.play-draw-pass { padding-inline: 0.7rem; }
+.play-add-pass { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 0.5rem; }
+
+.play-pass-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.play-pass-list li {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.6rem;
+  border-bottom: 1px solid var(--color-court-border);
+  padding-bottom: 0.45rem;
+  color: var(--color-text-dim);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.play-pass-list strong { color: var(--color-amber); }
+
+.play-pass-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.play-nba-lineup { padding: 0 0 0.45rem; }
+
+.play-check {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
 
 .play-lab :is(input, select) {
   width: 100%;
@@ -542,7 +592,13 @@ body {
   font-size: 1rem;
 }
 
-.play-tool-fields select,
+.play-lab .play-check input {
+  width: 1rem;
+  min-height: 0;
+  accent-color: var(--color-amber);
+}
+
+.play-field select,
 .play-save-form input { display: block; margin-top: 0.3rem; }
 
 .play-button-row {

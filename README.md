@@ -45,25 +45,28 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-### 2. Optional: enable current-season data refresh
+### 2. Refresh NBA stats locally
 
-Open a second terminal:
-
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python app.py
-```
-
-With Flask running locally, refresh the data file from another terminal:
+From the project directory:
 
 ```bash
-curl --fail --silent --show-error -X POST http://localhost:5001/api/refresh-static-data -o /dev/null
+npm run refresh-data
 ```
 
-Flask fetches traditional and advanced per-game stats through `nba_api`, joins them by NBA player ID, and writes `public/data/players.json`. The frontend reads that file and calculates role scores and comparisons in the browser. This setup uses a JSON snapshot for player stats. The Vercel configuration deploys Next.js only, so publishing a fresh snapshot requires deploying the updated file.
+If you still need to set up Python for this project, run these from the project directory once:
+
+```bash
+python3 -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
+```
+
+The command fetches traditional and advanced per-game stats through `nba_api`, joins them by NBA player ID, and checks that the players have the fields used by the app. It replaces `public/data/players.json` only after the checks pass. Explore Roles and Compare Players show the date of the last published update. Reload the app after refreshing.
+
+### Nightly updates on GitHub
+
+The **Refresh NBA stats** workflow runs nightly at 08:37 UTC once it is on the repository’s default branch. You can also start it under **Actions** → **Refresh NBA stats** → **Run workflow**. It commits only the updated JSON file and skips the commit if the data is identical. If a request or validation fails, the prior snapshot stays in use.
+
+A Vercel project connected to the same production branch can deploy these data commits through its Git integration. Check the first run in GitHub Actions and confirm it created a Vercel deployment.
 
 ## Project structure
 
@@ -89,9 +92,11 @@ public/data/players.json      # Static player data served to the frontend
 
 ## Play Lab notes
 
-Play Lab is a tactical visualization tool, not a game-outcome prediction engine. It supports Pick & Roll, Five-Out, and Horns actions; Drop, Switch, Hedge, and ICE coverages; and action-specific reads. The ball stays with the handler while an action develops, passes to the selected read, and plays the sequence three times before stopping.
+Play Lab supports Pick & Roll, Five-Out, and Horns actions and four defensive coverages. Use **Your lineup** to name the five offensive markers. The **Drawing tools** section lets you move players, draw their routes, and turn off preset offensive movement.
 
-Lineup action-fit grades use calibrated per-game stat thresholds—for example, shooting combines three-point accuracy and volume; creation combines scoring, usage, and passing. This prevents a single high archetype percentile from making an entire lineup look elite.
+Open **Ball movement** to choose who starts with possession. Add receivers in order for straight passes or draw each pass from the current passer to the next marker. Each receiver carries the ball until the next pass. The selected read supplies the default ball movement. Playbook saves and JSON exports include player names, routes, and pass sequences.
+
+**NBA lineup fit** uses optional NBA stat profiles and per-game stat thresholds to grade the action. Court names belong to the diagram.
 
 ## Validate changes
 

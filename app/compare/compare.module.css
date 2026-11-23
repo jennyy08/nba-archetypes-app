@@ -7,7 +7,7 @@
   margin-bottom: clamp(1rem, 2.5vw, 1.75rem);
 }
 
-.header div > p { margin-top: 0.65rem; }
+.header > div:first-child > p { margin-top: 0.65rem; }
 .season { color: var(--color-text-faint); font-size: 0.8125rem; white-space: nowrap; }
 
 .matchup {

@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "refresh-data": "backend/.venv/bin/python backend/app.py refresh",
     "lint": "eslint"
   },
   "dependencies": {

@@ -2,13 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import StatsUpdated from "@/components/StatsUpdated";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ARCHETYPES, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
 import { normalizePlayerName } from "@/lib/player-search";
 import { scoreArchetypes, standardize, type ArchetypeResult, type PlayerRecord } from "@/lib/stats";
 import styles from "./compare.module.css";
 
-type DataFile = { season: string; players: PlayerRecord[] };
+type DataFile = { season: string; updatedAt?: string; players: PlayerRecord[] };
 type RoleRow = { id: string; name: string; left: number; right: number };
 
 const KEY_STATS = [
@@ -67,7 +68,12 @@ export default function ComparePage() {
           <h1 className="scouting-title">Compare Players</h1>
           <p className="scouting-copy">See how two players score, create, and fit different roles.</p>
         </div>
-        {data && <p className={styles.season}>{data.season.replace("-", "–")} season</p>}
+        {data && (
+          <div className={styles.season}>
+            <p>{data.season.replace("-", "–")} season</p>
+            <StatsUpdated updatedAt={data.updatedAt} />
+          </div>
+        )}
       </header>
 
       <section className={`scouting-card ${styles.matchup}`} aria-label="Choose players to compare">

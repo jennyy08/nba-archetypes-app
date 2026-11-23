@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import ScatterPlot from "@/components/ScatterPlot";
+import StatsUpdated from "@/components/StatsUpdated";
 import { normalizePlayerName } from "@/lib/player-search";
 import { kMeans, nearestNeighbors, pca2D, scoreArchetypes, standardize, type ArchetypeResult, type PlayerRecord } from "@/lib/stats";
 import { ARCHETYPES, archetypeColor, clusterColor, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
 import styles from "./explore.module.css";
 
-type DataFile = { season: string; players: PlayerRecord[] };
+type DataFile = { season: string; updatedAt?: string; players: PlayerRecord[] };
 
 const DEFAULT_GROUP_COUNT = 7;
 const SUMMARY_STATS = [
@@ -164,7 +165,10 @@ export default function ExploreRolesPage() {
           <h1 className={styles.title}>Explore Roles</h1>
           <p className={styles.subtitle}>Find NBA players by how they play.</p>
         </div>
-        <p className={styles.season}>{data.season.replace("-", "–")} season <span aria-hidden="true">·</span> {players.length} players</p>
+        <div className={styles.season}>
+          <p>{data.season.replace("-", "–")} season <span aria-hidden="true">·</span> {players.length} players</p>
+          <StatsUpdated updatedAt={data.updatedAt} />
+        </div>
       </header>
 
       <section className={styles.card} aria-labelledby="player-map">

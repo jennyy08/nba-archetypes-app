@@ -1,11 +1,11 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, type PointerEvent } from "react";
+import { ballAtTime, ballTimeline, isOffensiveId, measurePath, mix, nextPasser, passPath, pointOnPath, type BallSequence, type OffensiveId, type PlayerNames, type Point } from "@/lib/play-sequence";
 
-export type Point = [number, number];
 export type CourtPlayer = { id: string; label: string; x: number; y: number; offense: boolean };
 export type ActionPreset = "pick-roll" | "five-out" | "horns";
-export type DrawMode = "move" | "route";
+export type DrawMode = "move" | "route" | "pass";
 export type CourtType = "indoor" | "outdoor";
 export type Playback = "idle" | "playing" | "paused";
 export type RouteMap = Record<string, Point[]>;
@@ -15,20 +15,26 @@ type Props = {
   players: CourtPlayer[];
   preset: ActionPreset;
   playback: Playback;
-  receiver: string;
+  readReceiver: OffensiveId;
+  ballSequence: BallSequence | null;
+  playerNames: PlayerNames;
   defenseTargets: Record<string, Point>;
   mode: DrawMode;
   editing: boolean;
   courtType: CourtType;
   customRoutes: RouteMap;
-  ballRoute: Point[];
+  usePresetRoutes: boolean;
   onComplete: () => void;
   onMove: (id: string, x: number, y: number) => void;
   onRoute: (id: string, route: Point[]) => void;
-  onReceiverChange: (id: string) => void;
+  onPass: (id: OffensiveId, path: Point[]) => void;
+  onPassMiss: () => void;
 };
 
-type Gesture = { kind: "marker"; id: string } | { kind: "route"; id: string; points: Point[] } | { kind: "ball" };
+type Gesture =
+  | { kind: "marker"; id: string }
+  | { kind: "route"; id: string; points: Point[] }
+  | { kind: "pass"; from: OffensiveId; points: Point[] };
 
 const presetRoutes: Record<ActionPreset, RouteMap> = {
   "pick-roll": { O1: [[42, 58]], O2: [[13, 18]], O3: [[87, 18]], O4: [[46, 52]], O5: [[65, 66]] },
@@ -36,20 +42,8 @@ const presetRoutes: Record<ActionPreset, RouteMap> = {
   horns: { O1: [[37, 57], [25, 36]], O2: [[15, 17]], O3: [[85, 17]], O4: [[48, 52]], O5: [[55, 52]] },
 };
 
-const RUN_DURATION = 2800;
 const RUN_COUNT = 3;
-const PASS_START = 0.48;
-const PASS_END = 0.88;
 const BALL_OFFSET = { x: 11, y: -11 };
-
-function mix(start: Point, end: Point, amount: number): Point {
-  return [start[0] + (end[0] - start[0]) * amount, start[1] + (end[1] - start[1]) * amount];
-}
-
-function pointOnRoute(route: Point[], progress: number): Point {
-  const value = progress * (route.length - 1);
-  return mix(route[Math.floor(value)], route[Math.ceil(value)], value % 1);
-}
 
 function drawCourt(context: CanvasRenderingContext2D, width: number, height: number, courtType: CourtType) {
   const x = (value: number) => value * width / 100;
@@ -102,13 +96,12 @@ function drawCourt(context: CanvasRenderingContext2D, width: number, height: num
 }
 
 const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
-  players, preset, playback, receiver, defenseTargets, mode, editing, courtType, customRoutes, ballRoute,
-  onComplete, onMove, onRoute, onReceiverChange,
+  players, preset, playback, readReceiver, ballSequence, playerNames, defenseTargets, mode, editing, courtType, customRoutes, usePresetRoutes,
+  onComplete, onMove, onRoute, onPass, onPassMiss,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const elapsed = useRef(0);
   const gesture = useRef<Gesture | null>(null);
-  const ballPreview = useRef<Point | null>(null);
   const redraw = useRef<(() => void) | null>(null);
 
   useImperativeHandle(ref, () => ({
@@ -129,10 +122,20 @@ const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
 
     if (playback === "idle") elapsed.current = 0;
 
-    const routes = Object.fromEntries(players.filter((player) => player.offense).map((player) => [
-      player.id,
-      [[player.x, player.y], ...(customRoutes[player.id]?.slice(1) ?? presetRoutes[preset][player.id] ?? [])] as Point[],
+    const timeline = ballTimeline(ballSequence, readReceiver);
+    const drawingPass = editing && mode === "pass";
+    const passer = nextPasser(ballSequence);
+    const starts = Object.fromEntries(players.map(({ id, x, y }): [string, Point] => [id, [x, y]]));
+    const routes = Object.fromEntries(players.filter((player) => player.offense).map(({ id }) => [
+      id,
+      measurePath([starts[id], ...(customRoutes[id]?.slice(1) ?? (usePresetRoutes ? presetRoutes[preset][id] : []))]),
     ]));
+    const playerAt = (id: OffensiveId, time: number) => pointOnPath(routes[id], time / timeline.duration);
+    const passPaths = timeline.passes.map(({ path, from, to, release, catchAt }) =>
+      measurePath(playback === "idle"
+        ? passPath(path, starts[from], starts[to])
+        : passPath(path, playerAt(from, release), playerAt(to, catchAt))),
+    );
     let frame = 0;
     let lastFrame: number | undefined;
 
@@ -152,15 +155,15 @@ const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
 
       const x = (value: number) => value * width / 100;
       const y = (value: number) => value * height / 100;
-      const progress = elapsed.current % RUN_DURATION / RUN_DURATION;
+      const time = elapsed.current % timeline.duration;
+      const progress = time / timeline.duration;
 
-      function drawPath(route: Point[], color: string) {
+      function drawPath(route: Point[], color: string, dash: number[]) {
         if (!context || route.length < 2) return;
         context.strokeStyle = color;
-        context.fillStyle = color;
         context.lineWidth = 1.55;
         context.lineCap = "round";
-        context.setLineDash([4, 5]);
+        context.setLineDash(dash);
         context.beginPath();
         context.moveTo(x(route[0][0]), y(route[0][1]));
         for (const [px, py] of route.slice(1)) context.lineTo(x(px), y(py));
@@ -169,21 +172,42 @@ const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
         const [endX, endY] = route[route.length - 1];
         context.beginPath();
         context.arc(x(endX), y(endY), 2.5, 0, Math.PI * 2);
+        context.fillStyle = color;
         context.fill();
       }
 
       drawCourt(context, width, height, courtType);
       for (const [id, route] of Object.entries(routes)) {
-        drawPath(route, customRoutes[id] ? "#81d9be" : "rgba(245, 182, 100, .70)");
+        drawPath(route.points, customRoutes[id] ? "#81d9be" : "rgba(245, 182, 100, .70)", [4, 5]);
       }
-      drawPath(ballRoute, "#f99759");
+      passPaths.forEach((path, index) => {
+        drawPath(path.points, "#f99759", [7, 4]);
+        const [px, py] = pointOnPath(path, 0.5);
+        context.beginPath();
+        context.arc(x(px), y(py), 8, 0, Math.PI * 2);
+        context.fillStyle = "#4c2a17";
+        context.fill();
+        context.fillStyle = "#ffbc8e";
+        context.font = "700 10px system-ui, sans-serif";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(String(index + 1), x(px), y(py) + 0.5);
+      });
+
+      const activeGesture = gesture.current;
+      if (activeGesture?.kind === "route") drawPath(activeGesture.points, "#81d9be", [4, 5]);
+      if (activeGesture?.kind === "pass") drawPath(activeGesture.points, "#ffc39d", [7, 4]);
 
       const positions = Object.fromEntries(players.map((player): [string, Point] => {
-        const start: Point = [player.x, player.y];
+        const start = starts[player.id];
         if (playback === "idle") return [player.id, start];
-        if (player.offense) return [player.id, pointOnRoute(routes[player.id], progress)];
+        if (isOffensiveId(player.id)) return [player.id, playerAt(player.id, time)];
         return [player.id, mix(start, defenseTargets[player.id] ?? start, Math.min(progress * 1.8, 1))];
       }));
+      const startingHolder = drawingPass ? passer : timeline.start;
+      const ball = playback === "idle"
+        ? { position: starts[startingHolder], holder: startingHolder, markerOffset: 1 }
+        : ballAtTime(timeline, passPaths, time, playerAt);
 
       const radius = Math.max(10, Math.min(15.5, width * 0.024));
       for (const player of players) {
@@ -196,7 +220,7 @@ const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
         context.arc(x(px), y(py), radius, 0, Math.PI * 2);
         context.fillStyle = player.offense ? "#f2ac56" : "#95c3e5";
         context.fill();
-        if (player.id === receiver && receiver !== "O1") {
+        if (player.id === ball.holder) {
           context.strokeStyle = "#fff4db";
           context.lineWidth = 1.75;
           context.stroke();
@@ -208,13 +232,30 @@ const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
         context.fillText(player.label, x(px), y(py) + 0.5);
       }
 
-      let ball = positions.O1;
-      if (playback !== "idle" && positions[receiver] && receiver !== "O1" && progress > PASS_START) {
-        const release = pointOnRoute(routes.O1, PASS_START);
-        ball = mix(release, positions[receiver], Math.min(1, (progress - PASS_START) / (PASS_END - PASS_START)));
+      for (const player of players) {
+        if (!isOffensiveId(player.id)) continue;
+        const name = playerNames[player.id]?.trim();
+        if (!name) continue;
+        const [px, py] = positions[player.id];
+        const fontSize = width < 450 ? 10 : 12;
+        const maxWidth = Math.min(115, width / 4);
+        context.font = `600 ${fontSize}px system-ui, sans-serif`;
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        const labelWidth = Math.min(context.measureText(name).width, maxWidth);
+        const cx = Math.max(labelWidth / 2 + 4, Math.min(width - labelWidth / 2 - 4, x(px)));
+        const cy = py > 88 ? y(py) - radius - 10 : y(py) + radius + 10;
+        context.fillStyle = "#171512";
+        context.fillRect(cx - labelWidth / 2 - 3, cy - fontSize / 2 - 2, labelWidth + 6, fontSize + 4);
+        context.fillStyle = "#f5eee4";
+        context.fillText(name, cx, cy, maxWidth);
       }
-      const bx = ballPreview.current ? x(ballPreview.current[0]) : x(ball[0]) + BALL_OFFSET.x;
-      const by = ballPreview.current ? y(ballPreview.current[1]) : y(ball[1]) + BALL_OFFSET.y;
+
+      const draftPoint = activeGesture?.kind === "pass" ? activeGesture.points.at(-1) : undefined;
+      const [ballX, ballY] = draftPoint ?? ball.position;
+      const offset = draftPoint ? 0 : ball.markerOffset;
+      const bx = x(ballX) + BALL_OFFSET.x * offset;
+      const by = y(ballY) + BALL_OFFSET.y * offset;
       context.beginPath();
       context.arc(bx, by, 6.5, 0, Math.PI * 2);
       context.fillStyle = "#ed8046";
@@ -233,7 +274,7 @@ const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
     function animate(time: number) {
       elapsed.current += Math.min(time - (lastFrame ?? time), 100);
       lastFrame = time;
-      if (elapsed.current >= RUN_DURATION * RUN_COUNT) {
+      if (elapsed.current >= timeline.duration * RUN_COUNT) {
         onComplete();
         return;
       }
@@ -251,7 +292,7 @@ const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
       cancelAnimationFrame(frame);
       redraw.current = null;
     };
-  }, [players, preset, playback, receiver, defenseTargets, customRoutes, ballRoute, courtType, onComplete]);
+  }, [players, preset, playback, readReceiver, ballSequence, playerNames, defenseTargets, customRoutes, usePresetRoutes, courtType, mode, editing, onComplete]);
 
   function position(event: PointerEvent<HTMLCanvasElement>): Point {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -273,15 +314,25 @@ const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
     return closest;
   }
 
+  function courtPoint([x, y]: Point): Point {
+    return [Math.max(8, Math.min(92, x)), Math.max(9, Math.min(92, y))];
+  }
+
   function startGesture(event: PointerEvent<HTMLCanvasElement>) {
     if (!editing || playback !== "idle" || !event.isPrimary || event.button !== 0) return;
     const point = position(event);
-    const handler = players.find((player) => player.id === "O1")!;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const ballDistance = Math.hypot((point[0] - handler.x) * rect.width / 100 - BALL_OFFSET.x, (point[1] - handler.y) * rect.height / 100 - BALL_OFFSET.y);
 
-    if (mode === "move" && ballDistance < 10) {
-      gesture.current = { kind: "ball" };
+    if (mode === "pass") {
+      const from = nextPasser(ballSequence);
+      const passer = players.find((player) => player.id === from);
+      if (!passer) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      const ballDistance = Math.hypot(
+        (point[0] - passer.x) * rect.width / 100 - BALL_OFFSET.x,
+        (point[1] - passer.y) * rect.height / 100 - BALL_OFFSET.y,
+      );
+      if (hitPlayer(event, point, true)?.id !== from && ballDistance > 14) return;
+      gesture.current = { kind: "pass", from, points: [[passer.x, passer.y]] };
     } else {
       const player = hitPlayer(event, point, mode === "route");
       if (!player) return;
@@ -295,30 +346,36 @@ const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
   function moveGesture(event: PointerEvent<HTMLCanvasElement>) {
     const active = gesture.current;
     if (!active || !event.isPrimary) return;
-    const [x, y] = position(event);
-    const point: Point = [Math.max(8, Math.min(92, x)), Math.max(9, Math.min(92, y))];
-    if (active.kind === "marker") onMove(active.id, ...point);
-    if (active.kind === "route") {
-      active.points = [...active.points, point];
-      onRoute(active.id, active.points);
-    }
-    if (active.kind === "ball") {
-      ballPreview.current = point;
+    const point = courtPoint(position(event));
+    if (active.kind === "marker") {
+      onMove(active.id, ...point);
+    } else {
+      const [x, y] = active.points[active.points.length - 1];
+      if (Math.hypot(point[0] - x, point[1] - y) < 0.35) return;
+      active.points.push(point);
       redraw.current?.();
     }
   }
 
   function cancelGesture() {
     gesture.current = null;
-    ballPreview.current = null;
     redraw.current?.();
   }
 
   function finishGesture(event: PointerEvent<HTMLCanvasElement>) {
-    if (!event.isPrimary) return;
-    if (gesture.current?.kind === "ball") {
-      const target = hitPlayer(event, position(event), true);
-      if (target) onReceiverChange(target.id);
+    const active = gesture.current;
+    if (!active || !event.isPrimary) return;
+    const end = position(event);
+    if (active.kind === "pass") {
+      const target = hitPlayer(event, end, true);
+      if (target && isOffensiveId(target.id) && target.id !== active.from) {
+        onPass(target.id, [...active.points, [target.x, target.y]]);
+      } else if (active.points.length > 1) {
+        onPassMiss();
+      }
+    }
+    if (active.kind === "route" && active.points.length > 1) {
+      onRoute(active.id, [...active.points, courtPoint(end)]);
     }
     cancelGesture();
   }
@@ -332,6 +389,7 @@ const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
       onPointerDown={startGesture}
       onPointerMove={moveGesture}
       onPointerUp={finishGesture}
+      onPointerCancel={cancelGesture}
       onLostPointerCapture={cancelGesture}
     />
   );
