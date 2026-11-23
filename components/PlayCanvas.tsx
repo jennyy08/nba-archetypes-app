@@ -1,54 +1,340 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, type PointerEvent } from "react";
 
+export type Point = [number, number];
 export type CourtPlayer = { id: string; label: string; x: number; y: number; offense: boolean };
 export type ActionPreset = "pick-roll" | "five-out" | "horns";
 export type DrawMode = "move" | "route";
-export type RouteMap = Record<string, [number, number][]>;
+export type CourtType = "indoor" | "outdoor";
+export type Playback = "idle" | "playing" | "paused";
+export type RouteMap = Record<string, Point[]>;
 export type PlayCanvasHandle = { exportPng: () => void };
 
+type Props = {
+  players: CourtPlayer[];
+  preset: ActionPreset;
+  playback: Playback;
+  receiver: string;
+  defenseTargets: Record<string, Point>;
+  mode: DrawMode;
+  editing: boolean;
+  courtType: CourtType;
+  customRoutes: RouteMap;
+  ballRoute: Point[];
+  onComplete: () => void;
+  onMove: (id: string, x: number, y: number) => void;
+  onRoute: (id: string, route: Point[]) => void;
+  onReceiverChange: (id: string) => void;
+};
+
+type Gesture = { kind: "marker"; id: string } | { kind: "route"; id: string; points: Point[] } | { kind: "ball" };
+
 const presetRoutes: Record<ActionPreset, RouteMap> = {
-  "pick-roll": { O1: [[50, 72], [42, 58]], O2: [[18, 28], [13, 18]], O3: [[82, 28], [87, 18]], O4: [[34, 42], [46, 52]], O5: [[56, 43], [65, 66]] },
-  "five-out": { O1: [[50, 70], [50, 55]], O2: [[15, 24], [12, 16]], O3: [[85, 24], [88, 16]], O4: [[31, 39], [25, 24]], O5: [[69, 39], [75, 24]] },
-  horns: { O1: [[50, 72], [37, 57], [25, 36]], O2: [[16, 28], [15, 17]], O3: [[84, 28], [85, 17]], O4: [[34, 43], [48, 52]], O5: [[66, 43], [55, 52]] },
+  "pick-roll": { O1: [[42, 58]], O2: [[13, 18]], O3: [[87, 18]], O4: [[46, 52]], O5: [[65, 66]] },
+  "five-out": { O1: [[50, 55]], O2: [[12, 16]], O3: [[88, 16]], O4: [[25, 24]], O5: [[75, 24]] },
+  horns: { O1: [[37, 57], [25, 36]], O2: [[15, 17]], O3: [[85, 17]], O4: [[48, 52]], O5: [[55, 52]] },
 };
 
-const pointOnRoute = (route: [number, number][], progress: number): [number, number] => {
-  if (route.length < 2) return route[0] || [50, 72];
-  const value = Math.min(progress * (route.length - 1), route.length - 1); const start = route[Math.floor(value)]; const end = route[Math.ceil(value)]; const fraction = value % 1;
-  return [start[0] + (end[0] - start[0]) * fraction, start[1] + (end[1] - start[1]) * fraction];
-};
+const RUN_DURATION = 2800;
+const RUN_COUNT = 3;
+const PASS_START = 0.48;
+const PASS_END = 0.88;
+const BALL_OFFSET = { x: 11, y: -11 };
 
-const PlayCanvas = forwardRef<PlayCanvasHandle, { players: CourtPlayer[]; preset: ActionPreset; playing: boolean; readTarget: [number, number]; defenseTargets: Record<string, [number, number]>; resetKey: number; onComplete: () => void; mode?: DrawMode; drawingPlayer?: string; customRoutes?: RouteMap; ballRoute?: [number, number][]; onRoutesChange?: (routes: RouteMap) => void; onBallRouteChange?: (route: [number, number][]) => void; onMove: (id: string, x: number, y: number) => void }>(({ players, preset, playing, readTarget, defenseTargets, resetKey, onComplete, mode, customRoutes, ballRoute, onRoutesChange, onBallRouteChange, onMove }, ref) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null); const dragRef = useRef<string | null>(null); const ballDragRef = useRef(false); const drawingRef = useRef<{ id: string; points: [number, number][] } | null>(null); const progressRef = useRef(0); const frameRef = useRef<number | null>(null); const runsRef = useRef(0);
-  const [localMode, setLocalMode] = useState<DrawMode>("move"); const [localRoutes, setLocalRoutes] = useState<RouteMap>({}); const [localBallRoute, setLocalBallRoute] = useState<[number, number][]>([]); const [ballPosition, setBallPosition] = useState<[number, number]>([50, 72]); const [ballTarget, setBallTarget] = useState("O1"); const [courtType, setCourtType] = useState<"indoor" | "outdoor">("indoor"); const [showGuide, setShowGuide] = useState(() => typeof window !== "undefined" && !localStorage.getItem("play-lab-guide-seen"));
-  const activeMode = mode ?? localMode; const activeRoutes = customRoutes ?? localRoutes; const activeBallRoute = ballRoute ?? localBallRoute;
-  const updateRoutes = (routes: RouteMap) => { setLocalRoutes(routes); onRoutesChange?.(routes); };
-  useImperativeHandle(ref, () => ({ exportPng: () => { const canvas = canvasRef.current; if (!canvas) return; const link = document.createElement("a"); link.download = "play-lab-diagram.png"; link.href = canvas.toDataURL("image/png"); link.click(); } }));
-  useEffect(() => { const exportImage = () => { const canvas = canvasRef.current; if (!canvas) return; const link = document.createElement("a"); link.download = "play-lab-diagram.png"; link.href = canvas.toDataURL("image/png"); link.click(); }; window.addEventListener("playlab-export-image", exportImage); return () => window.removeEventListener("playlab-export-image", exportImage); }, []);
-  useEffect(() => { progressRef.current = 0; runsRef.current = 0; }, [resetKey]);
+function mix(start: Point, end: Point, amount: number): Point {
+  return [start[0] + (end[0] - start[0]) * amount, start[1] + (end[1] - start[1]) * amount];
+}
+
+function pointOnRoute(route: Point[], progress: number): Point {
+  const value = progress * (route.length - 1);
+  return mix(route[Math.floor(value)], route[Math.ceil(value)], value % 1);
+}
+
+function drawCourt(context: CanvasRenderingContext2D, width: number, height: number, courtType: CourtType) {
+  const x = (value: number) => value * width / 100;
+  const y = (value: number) => value * height / 100;
+  const indoor = courtType === "indoor";
+  const floor = context.createRadialGradient(x(50), y(38), 0, x(50), y(38), width * 0.7);
+  floor.addColorStop(0, indoor ? "#30261e" : "#34414a");
+  floor.addColorStop(1, indoor ? "#171512" : "#20272c");
+  context.fillStyle = floor;
+  context.fillRect(0, 0, width, height);
+
+  context.fillStyle = indoor ? "rgba(255, 192, 125, .024)" : "rgba(202, 226, 238, .025)";
+  for (let strip = 0; strip < 100; strip += 8) {
+    context.fillRect(x(strip), 0, x(4), height);
+  }
+
+  context.fillStyle = indoor ? "rgba(230, 163, 90, .055)" : "rgba(198, 225, 241, .055)";
+  context.fillRect(x(34), y(9), x(32), y(33));
+  context.strokeStyle = indoor ? "#83705c" : "#82939f";
+  context.lineWidth = 1.25;
+  context.strokeRect(x(7.5), y(9), x(85), y(83));
+  context.strokeRect(x(34), y(9), x(32), y(33));
+
+  context.beginPath();
+  context.moveTo(x(13), y(9));
+  context.lineTo(x(13), y(30));
+  context.bezierCurveTo(x(20), y(77), x(80), y(77), x(87), y(30));
+  context.lineTo(x(87), y(9));
+  context.stroke();
+
+  context.beginPath();
+  context.ellipse(x(50), y(42), x(9), y(13), 0, 0, Math.PI);
+  context.moveTo(x(41), y(92));
+  context.ellipse(x(50), y(92), x(9), y(13), 0, Math.PI, Math.PI * 2);
+  context.stroke();
+
+  context.setLineDash([4, 5]);
+  context.beginPath();
+  context.ellipse(x(50), y(42), x(9), y(13), 0, Math.PI, Math.PI * 2);
+  context.stroke();
+  context.setLineDash([]);
+
+  context.strokeStyle = indoor ? "#c69c70" : "#c1d1dc";
+  context.beginPath();
+  context.moveTo(x(46), y(13));
+  context.lineTo(x(54), y(13));
+  context.moveTo(x(52.4), y(17));
+  context.ellipse(x(50), y(17), x(2.4), y(3.3), 0, 0, Math.PI * 2);
+  context.stroke();
+}
+
+const PlayCanvas = forwardRef<PlayCanvasHandle, Props>(function PlayCanvas({
+  players, preset, playback, receiver, defenseTargets, mode, editing, courtType, customRoutes, ballRoute,
+  onComplete, onMove, onRoute, onReceiverChange,
+}, ref) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const elapsed = useRef(0);
+  const gesture = useRef<Gesture | null>(null);
+  const ballPreview = useRef<Point | null>(null);
+  const redraw = useRef<(() => void) | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    exportPng() {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const link = document.createElement("a");
+      link.download = "play-lab-diagram.png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    },
+  }), []);
+
   useEffect(() => {
-    const canvas = canvasRef.current; if (!canvas) return; const context = canvas.getContext("2d"); if (!context) return;
-    let drawX = (value: number) => value; let drawY = (value: number) => value;
-    const drawPath = (route: [number, number][], color: string, width = 2) => { if (route.length < 2) return; context.strokeStyle = color; context.lineWidth = width; context.setLineDash([5, 5]); context.beginPath(); route.forEach(([rx, ry], index) => index ? context.lineTo(drawX(rx), drawY(ry)) : context.moveTo(drawX(rx), drawY(ry))); context.stroke(); context.setLineDash([]); };
-    const draw = () => {
-      const rect = canvas.getBoundingClientRect(); const ratio = window.devicePixelRatio || 1; canvas.width = rect.width * ratio; canvas.height = rect.height * ratio; context.scale(ratio, ratio); const w = rect.width, h = rect.height; const x = (v: number) => v / 100 * w; const y = (v: number) => v / 100 * h; drawX = x; drawY = y;
-      context.fillStyle = courtType === "indoor" ? "#17110c" : "#303438"; context.fillRect(0, 0, w, h); context.strokeStyle = courtType === "indoor" ? "#5e4429" : "#9ca3a8"; context.lineWidth = 2; context.strokeRect(x(7), y(6), x(86), y(90)); context.beginPath(); context.arc(x(50), y(6), x(18), 0, Math.PI); context.stroke(); context.beginPath(); context.arc(x(50), y(6), x(6), 0, Math.PI); context.stroke(); context.beginPath(); context.arc(x(50), y(19), x(6), 0, Math.PI * 2); context.stroke(); context.beginPath(); context.moveTo(x(33), y(6)); context.lineTo(x(33), y(24)); context.lineTo(x(67), y(24)); context.lineTo(x(67), y(6)); context.stroke(); context.strokeStyle = courtType === "indoor" ? "#9e7139" : "#cbd5e1"; context.setLineDash([5, 5]); context.beginPath(); context.arc(x(50), y(6), x(39), 0, Math.PI); context.stroke(); context.setLineDash([]);
-      const progress = progressRef.current; let handler: [number, number] = [50, 72];
-      players.filter((p) => p.offense).forEach((p) => drawPath(activeRoutes[p.id] || presetRoutes[preset][p.id], activeRoutes[p.id] ? "rgba(110,211,175,.8)" : "rgba(242,169,59,.42)")); if (activeBallRoute.length) drawPath(activeBallRoute, "rgba(240,140,70,.9)", 2.5);
-      players.forEach((player) => { let [px, py] = [player.x, player.y]; const route = activeRoutes[player.id] || presetRoutes[preset][player.id]; if (playing && player.offense && route) [px, py] = pointOnRoute(route, progress); if (playing && !player.offense && defenseTargets[player.id]) { const target = defenseTargets[player.id]; const amount = Math.min(progress * 1.8, 1); px += (target[0] - px) * amount; py += (target[1] - py) * amount; } if (player.id === "O1") handler = [px, py]; context.beginPath(); context.fillStyle = player.offense ? "#f2a93b" : "#68a9d6"; context.arc(x(px), y(py), 15, 0, Math.PI * 2); context.fill(); context.strokeStyle = player.offense ? "#fff0d5" : "#d7edff"; context.lineWidth = 1; context.stroke(); context.fillStyle = "#17110c"; context.font = "600 11px sans-serif"; context.textAlign = "center"; context.textBaseline = "middle"; context.fillText(player.label, x(px), y(py)); });
-      const targetRoute = activeRoutes[ballTarget] || presetRoutes[preset][ballTarget] || []; const target = targetRoute.length ? targetRoute[targetRoute.length - 1] : handler; const passProgress = Math.max(0, (progress - 0.48) / 0.52); const [bx, by] = playing ? [handler[0] + (target[0] - handler[0]) * passProgress, handler[1] + (target[1] - handler[1]) * passProgress] : ballPosition; const ballX = x(bx), ballY = y(by); context.beginPath(); context.fillStyle = "#db7a25"; context.arc(ballX, ballY, 8, 0, Math.PI * 2); context.fill(); context.strokeStyle = "#402513"; context.lineWidth = 1.5; context.stroke(); context.fillStyle = "#402513"; context.fillRect(ballX - 1, ballY - 7, 2, 14); context.fillRect(ballX - 7, ballY - 1, 14, 2); context.fillRect(ballX - 6, ballY - 5, 2, 3); context.fillRect(ballX + 4, ballY + 2, 2, 3);
-      if (playing) { const next = progress + 0.006; if (next >= 1) { runsRef.current += 1; if (runsRef.current >= 3) { progressRef.current = 1; onComplete(); return; } progressRef.current = 0; } else progressRef.current = next; frameRef.current = requestAnimationFrame(draw); }
-    }; draw(); return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
-  }, [players, preset, playing, readTarget, defenseTargets, resetKey, onComplete, activeRoutes, activeBallRoute, ballPosition, ballTarget, courtType]);
-  const point = (event: React.PointerEvent<HTMLCanvasElement>): [number, number] => { const rect = event.currentTarget.getBoundingClientRect(); return [Math.max(8, Math.min(92, (event.clientX - rect.left) / rect.width * 100)), Math.max(8, Math.min(92, (event.clientY - rect.top) / rect.height * 100))]; };
-  const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => { const p = point(event); event.currentTarget.setPointerCapture(event.pointerId); if (activeMode === "move") { if (Math.hypot(ballPosition[0] - p[0], ballPosition[1] - p[1]) < 5) ballDragRef.current = true; else { const hit = players.find((player) => Math.hypot(player.x - p[0], player.y - p[1]) < 6); if (hit) dragRef.current = hit.id; } } else { const hit = players.find((player) => player.offense && Math.hypot(player.x - p[0], player.y - p[1]) < 7); if (hit) drawingRef.current = { id: hit.id, points: [p] }; } };
-  const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => { const p = point(event); if (dragRef.current) onMove(dragRef.current, p[0], p[1]); if (ballDragRef.current) setBallPosition(p); if (drawingRef.current) { const next = [...drawingRef.current.points, p]; drawingRef.current = { ...drawingRef.current, points: next }; updateRoutes({ ...activeRoutes, [drawingRef.current.id]: next }); } };
-  const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => { if (ballDragRef.current) { const p = point(event); const receiver = players.find((player) => player.offense && Math.hypot(player.x - p[0], player.y - p[1]) < 9); if (receiver) { setBallTarget(receiver.id); setBallPosition([receiver.x, receiver.y]); } } dragRef.current = null; ballDragRef.current = false; drawingRef.current = null; };
-  const dismissGuide = () => { localStorage.setItem("play-lab-guide-seen", "true"); setShowGuide(false); };
-  return <div className="play-canvas-wrap">{showGuide && <div className="play-guide-backdrop" role="dialog" aria-modal="true" aria-labelledby="play-guide-title"><section className="play-guide"><button onClick={dismissGuide} className="play-guide-close" aria-label="Close guide">×</button><p className="font-display text-xs uppercase tracking-[0.2em] text-amber">Quick start</p><h2 id="play-guide-title" className="font-display text-3xl uppercase tracking-wide mt-1">Build your play</h2><p className="text-sm text-text-dim mt-2">Play Lab is a coach-style diagram tool. Start with a real NBA lineup, create an action, then animate your design.</p><div className="guide-steps"><div><div className="guide-court"><i className="guide-dot one" /><i className="guide-dot two" /><i className="guide-ball" /><b className="guide-pointer">↖</b></div><h3>1. Set the starting shape</h3><p>Use the lineup and built-in action controls, then choose <strong>Move markers</strong> to position players. Drag the ball onto a player to choose the receiver.</p></div><div><div className="guide-court"><i className="guide-dot one" /><i className="guide-dot two" /><em className="guide-route" /><b className="guide-pointer">↖</b></div><h3>2. Draw movement</h3><p>Choose <strong>Draw player routes</strong>, click a player, and drag their path. Repeat for every offensive player you want moving.</p></div><div><div className="guide-court"><i className="guide-dot one" /><i className="guide-dot two" /><i className="guide-ball moving" /><em className="guide-route" /></div><h3>3. Run the play</h3><p>Pick a coverage and read, then run the sequence. The lineup panel grades how well your selected five fit the action.</p></div></div><button onClick={dismissGuide} className="play-button mt-6">Start designing</button></section></div>}<div className="play-draw-tools"><label className="court-type">Court <select value={courtType} onChange={(event) => setCourtType(event.target.value as "indoor" | "outdoor")}><option value="indoor">Indoor</option><option value="outdoor">Outdoor</option></select></label><button onClick={() => setLocalMode("move")} className={activeMode === "move" ? "draw-active" : ""}>Move markers</button><button onClick={() => setLocalMode("route")} className={activeMode === "route" ? "draw-active" : ""}>Draw player routes</button><span className="ball-target">Ball → {ballTarget}</span><button onClick={() => { setLocalRoutes({}); setLocalBallRoute([]); onRoutesChange?.({}); onBallRouteChange?.([]); }} className="draw-clear">Clear drawings</button></div><canvas ref={canvasRef} className={`play-canvas play-canvas-${activeMode}`} aria-label="Interactive half-court basketball play diagram" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} /></div>;
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+
+    if (playback === "idle") elapsed.current = 0;
+
+    const routes = Object.fromEntries(players.filter((player) => player.offense).map((player) => [
+      player.id,
+      [[player.x, player.y], ...(customRoutes[player.id]?.slice(1) ?? presetRoutes[preset][player.id] ?? [])] as Point[],
+    ]));
+    let frame = 0;
+    let lastFrame: number | undefined;
+
+    function draw() {
+      if (!canvas || !context) return;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (!width || !height) return;
+      const ratio = window.devicePixelRatio || 1;
+      const pixelWidth = Math.round(width * ratio);
+      const pixelHeight = Math.round(height * ratio);
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+      }
+      context.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0);
+
+      const x = (value: number) => value * width / 100;
+      const y = (value: number) => value * height / 100;
+      const progress = elapsed.current % RUN_DURATION / RUN_DURATION;
+
+      function drawPath(route: Point[], color: string) {
+        if (!context || route.length < 2) return;
+        context.strokeStyle = color;
+        context.fillStyle = color;
+        context.lineWidth = 1.55;
+        context.lineCap = "round";
+        context.setLineDash([4, 5]);
+        context.beginPath();
+        context.moveTo(x(route[0][0]), y(route[0][1]));
+        for (const [px, py] of route.slice(1)) context.lineTo(x(px), y(py));
+        context.stroke();
+        context.setLineDash([]);
+        const [endX, endY] = route[route.length - 1];
+        context.beginPath();
+        context.arc(x(endX), y(endY), 2.5, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      drawCourt(context, width, height, courtType);
+      for (const [id, route] of Object.entries(routes)) {
+        drawPath(route, customRoutes[id] ? "#81d9be" : "rgba(245, 182, 100, .70)");
+      }
+      drawPath(ballRoute, "#f99759");
+
+      const positions = Object.fromEntries(players.map((player): [string, Point] => {
+        const start: Point = [player.x, player.y];
+        if (playback === "idle") return [player.id, start];
+        if (player.offense) return [player.id, pointOnRoute(routes[player.id], progress)];
+        return [player.id, mix(start, defenseTargets[player.id] ?? start, Math.min(progress * 1.8, 1))];
+      }));
+
+      const radius = Math.max(10, Math.min(15.5, width * 0.024));
+      for (const player of players) {
+        const [px, py] = positions[player.id];
+        context.beginPath();
+        context.arc(x(px), y(py), radius + 1.5, 0, Math.PI * 2);
+        context.fillStyle = "#171512";
+        context.fill();
+        context.beginPath();
+        context.arc(x(px), y(py), radius, 0, Math.PI * 2);
+        context.fillStyle = player.offense ? "#f2ac56" : "#95c3e5";
+        context.fill();
+        if (player.id === receiver && receiver !== "O1") {
+          context.strokeStyle = "#fff4db";
+          context.lineWidth = 1.75;
+          context.stroke();
+        }
+        context.fillStyle = "#181511";
+        context.font = `700 ${radius > 12 ? 12 : 9}px system-ui, sans-serif`;
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(player.label, x(px), y(py) + 0.5);
+      }
+
+      let ball = positions.O1;
+      if (playback !== "idle" && positions[receiver] && receiver !== "O1" && progress > PASS_START) {
+        const release = pointOnRoute(routes.O1, PASS_START);
+        ball = mix(release, positions[receiver], Math.min(1, (progress - PASS_START) / (PASS_END - PASS_START)));
+      }
+      const bx = ballPreview.current ? x(ballPreview.current[0]) : x(ball[0]) + BALL_OFFSET.x;
+      const by = ballPreview.current ? y(ballPreview.current[1]) : y(ball[1]) + BALL_OFFSET.y;
+      context.beginPath();
+      context.arc(bx, by, 6.5, 0, Math.PI * 2);
+      context.fillStyle = "#ed8046";
+      context.fill();
+      context.strokeStyle = "#231811";
+      context.lineWidth = 1.5;
+      context.stroke();
+      context.beginPath();
+      context.moveTo(bx - 5.5, by);
+      context.lineTo(bx + 5.5, by);
+      context.moveTo(bx, by - 5.5);
+      context.lineTo(bx, by + 5.5);
+      context.stroke();
+    }
+
+    function animate(time: number) {
+      elapsed.current += Math.min(time - (lastFrame ?? time), 100);
+      lastFrame = time;
+      if (elapsed.current >= RUN_DURATION * RUN_COUNT) {
+        onComplete();
+        return;
+      }
+      draw();
+      frame = requestAnimationFrame(animate);
+    }
+
+    redraw.current = draw;
+    draw();
+    const observer = new ResizeObserver(draw);
+    observer.observe(canvas);
+    if (playback === "playing") frame = requestAnimationFrame(animate);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      redraw.current = null;
+    };
+  }, [players, preset, playback, receiver, defenseTargets, customRoutes, ballRoute, courtType, onComplete]);
+
+  function position(event: PointerEvent<HTMLCanvasElement>): Point {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return [(event.clientX - rect.left) * 100 / rect.width, (event.clientY - rect.top) * 100 / rect.height];
+  }
+
+  function hitPlayer(event: PointerEvent<HTMLCanvasElement>, point: Point, offenseOnly: boolean) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    let closest: CourtPlayer | undefined;
+    let minDistance = event.pointerType === "touch" ? 24 : 18;
+    for (const player of players) {
+      if (offenseOnly && !player.offense) continue;
+      const distance = Math.hypot((player.x - point[0]) * rect.width / 100, (player.y - point[1]) * rect.height / 100);
+      if (distance < minDistance) {
+        closest = player;
+        minDistance = distance;
+      }
+    }
+    return closest;
+  }
+
+  function startGesture(event: PointerEvent<HTMLCanvasElement>) {
+    if (!editing || playback !== "idle" || !event.isPrimary || event.button !== 0) return;
+    const point = position(event);
+    const handler = players.find((player) => player.id === "O1")!;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ballDistance = Math.hypot((point[0] - handler.x) * rect.width / 100 - BALL_OFFSET.x, (point[1] - handler.y) * rect.height / 100 - BALL_OFFSET.y);
+
+    if (mode === "move" && ballDistance < 10) {
+      gesture.current = { kind: "ball" };
+    } else {
+      const player = hitPlayer(event, point, mode === "route");
+      if (!player) return;
+      gesture.current = mode === "move"
+        ? { kind: "marker", id: player.id }
+        : { kind: "route", id: player.id, points: [[player.x, player.y]] };
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveGesture(event: PointerEvent<HTMLCanvasElement>) {
+    const active = gesture.current;
+    if (!active || !event.isPrimary) return;
+    const [x, y] = position(event);
+    const point: Point = [Math.max(8, Math.min(92, x)), Math.max(9, Math.min(92, y))];
+    if (active.kind === "marker") onMove(active.id, ...point);
+    if (active.kind === "route") {
+      active.points = [...active.points, point];
+      onRoute(active.id, active.points);
+    }
+    if (active.kind === "ball") {
+      ballPreview.current = point;
+      redraw.current?.();
+    }
+  }
+
+  function cancelGesture() {
+    gesture.current = null;
+    ballPreview.current = null;
+    redraw.current?.();
+  }
+
+  function finishGesture(event: PointerEvent<HTMLCanvasElement>) {
+    if (!event.isPrimary) return;
+    if (gesture.current?.kind === "ball") {
+      const target = hitPlayer(event, position(event), true);
+      if (target) onReceiverChange(target.id);
+    }
+    cancelGesture();
+  }
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="play-canvas"
+      data-mode={editing && playback === "idle" ? mode : undefined}
+      aria-label="Half-court diagram with five offensive and five defensive players"
+      onPointerDown={startGesture}
+      onPointerMove={moveGesture}
+      onPointerUp={finishGesture}
+      onLostPointerCapture={cancelGesture}
+    />
+  );
 });
 
-PlayCanvas.displayName = "PlayCanvas";
 export default PlayCanvas;

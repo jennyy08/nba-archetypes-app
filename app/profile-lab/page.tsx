@@ -1,7 +1,5 @@
-"use client";
-
-import { ArchetypeExperience } from "@/app/page";
+import { redirect } from "next/navigation";
 
 export default function ProfileLabPage() {
-  return <ArchetypeExperience view="lab" />;
+  redirect("/#custom-groups");
 }

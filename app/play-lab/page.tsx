@@ -1,13 +1,35 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import PlayCanvas, { ActionPreset, CourtPlayer, RouteMap } from "@/components/PlayCanvas";
+import { useCallback, useEffect, useRef, useState } from "react";
+import PlayCanvas, {
+  type ActionPreset,
+  type CourtPlayer,
+  type CourtType,
+  type DrawMode,
+  type Playback,
+  type PlayCanvasHandle,
+  type Point,
+  type RouteMap,
+} from "@/components/PlayCanvas";
 
 type Player = Record<string, number | string> & { name: string; team: string };
 type DataFile = { season: string; players: Player[] };
 type Coverage = "drop" | "switch" | "hedge" | "ice";
-type PlayRead = { id: string; label: string; target: [number, number] };
-type SavedSetup = { id: string; name: string; savedAt: string; lineup: string[]; court: CourtPlayer[]; preset: ActionPreset; coverage: Coverage; read: string; customRoutes: RouteMap; ballRoute: [number, number][] };
+type PlayRead = { id: string; label: string; target: Point; receiver: string };
+type SavedSetup = {
+  id: string;
+  name: string;
+  savedAt: string;
+  lineup: string[];
+  court: CourtPlayer[];
+  preset: ActionPreset;
+  coverage: Coverage;
+  read: string;
+  customRoutes: RouteMap;
+  ballRoute: Point[];
+  receiverOverride?: string | null;
+  courtType?: CourtType;
+};
 const PLAYBOOK_KEY = "nba-archetype-studio-playbook";
 
 const defaults = ["Stephen Curry", "Klay Thompson", "LeBron James", "Giannis Antetokounmpo", "Nikola Jokic"];
@@ -15,11 +37,31 @@ const initialCourt: CourtPlayer[] = [{ id: "O1", label: "1", x: 50, y: 72, offen
 const presets: { id: ActionPreset; title: string; description: string }[] = [{ id: "pick-roll", title: "Pick & roll", description: "Screen, turn the corner, and roll into space." }, { id: "five-out", title: "Five-out", description: "Clear the paint and stretch the defense." }, { id: "horns", title: "Horns", description: "Two high screeners create multiple reads." }];
 const coverageLayouts: Record<Coverage, Record<string, [number, number]>> = { drop: { X1: [50, 64], X2: [26, 31], X3: [74, 31], X4: [39, 36], X5: [57, 53] }, switch: { X1: [46, 55], X2: [26, 31], X3: [74, 31], X4: [51, 65], X5: [56, 57] }, hedge: { X1: [47, 67], X2: [26, 31], X3: [74, 31], X4: [38, 38], X5: [49, 58] }, ice: { X1: [43, 67], X2: [26, 31], X3: [74, 31], X4: [38, 39], X5: [56, 55] } };
 const coverages: { id: Coverage; label: string; text: string }[] = [{ id: "drop", label: "Drop", text: "Big stays near the paint." }, { id: "switch", label: "Switch", text: "Defenders exchange assignments." }, { id: "hedge", label: "Hedge", text: "Big shows high to stop the ball." }, { id: "ice", label: "ICE", text: "Force the ball handler away from the middle." }];
-// Self-created reads target the ball handler's actual route endpoint; passing
-// reads target the receiving player's endpoint. This keeps the ball attached
-// to a real player instead of sending it to an arbitrary court coordinate.
-const reads: Record<ActionPreset, PlayRead[]> = { "pick-roll": [{ id: "pull-up", label: "Pull-up", target: [42, 58] }, { id: "roller", label: "Hit the roller", target: [65, 66] }, { id: "corner", label: "Kick to corner", target: [13, 18] }], "five-out": [{ id: "drive", label: "Attack the lane", target: [50, 55] }, { id: "corner", label: "Kick to corner", target: [12, 16] }, { id: "swing", label: "Swing the ball", target: [88, 16] }], horns: [{ id: "pull-up", label: "Elbow pull-up", target: [25, 36] }, { id: "roll", label: "Hit the roller", target: [55, 52] }, { id: "weak-side", label: "Weak-side kick", target: [85, 17] }] };
-const outcome = (read: string, coverage: Coverage) => coverage === "switch" ? `${read}: the switch crowds the first option—look for the matchup advantage.` : coverage === "hedge" ? `${read}: the hedge pressures the ball, creating a brief outlet window.` : coverage === "ice" ? `${read}: ICE takes away the middle, so the sideline outlet is the cleaner read.` : `${read}: the drop creates space for a patient pull-up or a pass to the roller.`;
+const reads: Record<ActionPreset, PlayRead[]> = {
+  "pick-roll": [
+    { id: "pull-up", label: "Pull-up", target: [42, 58], receiver: "O1" },
+    { id: "roller", label: "Hit the roller", target: [65, 66], receiver: "O5" },
+    { id: "corner", label: "Kick to corner", target: [13, 18], receiver: "O2" },
+  ],
+  "five-out": [
+    { id: "drive", label: "Attack the lane", target: [50, 55], receiver: "O1" },
+    { id: "corner", label: "Kick to corner", target: [12, 16], receiver: "O2" },
+    { id: "swing", label: "Swing the ball", target: [88, 16], receiver: "O3" },
+  ],
+  horns: [
+    { id: "pull-up", label: "Elbow pull-up", target: [25, 36], receiver: "O1" },
+    { id: "roll", label: "Hit the roller", target: [55, 52], receiver: "O5" },
+    { id: "weak-side", label: "Weak-side kick", target: [85, 17], receiver: "O3" },
+  ],
+};
+
+const coverageNotes: Record<Coverage, string> = {
+  drop: "The drop leaves space for a patient pull-up or a pass to the roller.",
+  switch: "The switch crowds the first option. Look for a mismatch.",
+  hedge: "The hedge pressures the ball and opens a brief outlet window.",
+  ice: "ICE takes away the middle. Look for an outlet along the sideline.",
+};
+
 type ActionGrade = { label: string; score: number; suggestion: string };
 const clamp = (value: number) => Math.max(0, Math.min(100, value));
 const rangeScore = (value: number, floor: number, ceiling: number) => clamp(((value - floor) / (ceiling - floor)) * 100);
@@ -36,20 +78,338 @@ const actionGrades = (action: ActionPreset, players: Player[]): ActionGrade[] =>
 };
 
 export default function PlayLabPage() {
-  const [data, setData] = useState<DataFile | null>(null); const [lineup, setLineup] = useState<string[]>(defaults); const [court, setCourt] = useState(initialCourt); const [preset, setPreset] = useState<ActionPreset>("pick-roll"); const [coverage, setCoverageState] = useState<Coverage>("drop"); const [read, setRead] = useState("pull-up"); const [playing, setPlaying] = useState(false); const [animationKey, setAnimationKey] = useState(0); const [setupName, setSetupName] = useState(""); const [customRoutes, setCustomRoutes] = useState<RouteMap>({}); const [ballRoute, setBallRoute] = useState<[number, number][]>([]); const [savedSetups, setSavedSetups] = useState<SavedSetup[]>(() => { if (typeof window === "undefined") return []; try { return JSON.parse(localStorage.getItem(PLAYBOOK_KEY) || "[]"); } catch { return []; } });
-  useEffect(() => { fetch("/data/players.json", { cache: "no-store" }).then((response) => response.json()).then((file: DataFile) => { setData(file); setLineup(defaults.map((name, index) => file.players.some((player) => player.name === name) ? name : file.players[index].name)); }); }, []);
-  const selectedPlayers = useMemo(() => data ? lineup.map((name) => data.players.find((player) => player.name === name)).filter((player): player is Player => Boolean(player)) : [], [data, lineup]);
-  if (!data || selectedPlayers.length !== 5) return <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center text-text-dim font-display">Loading Play Lab…</div>;
+  const [data, setData] = useState<DataFile | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [lineup, setLineup] = useState(defaults);
+  const [court, setCourt] = useState(initialCourt);
+  const [preset, setPreset] = useState<ActionPreset>("pick-roll");
+  const [coverage, setCoverage] = useState<Coverage>("drop");
+  const [read, setRead] = useState("pull-up");
+  const [playback, setPlayback] = useState<Playback>("idle");
+  const [mode, setMode] = useState<DrawMode>("move");
+  const [editing, setEditing] = useState(false);
+  const [courtType, setCourtType] = useState<CourtType>("indoor");
+  const [setupName, setSetupName] = useState("");
+  const [customRoutes, setCustomRoutes] = useState<RouteMap>({});
+  const [ballRoute, setBallRoute] = useState<Point[]>([]);
+  const [receiverOverride, setReceiverOverride] = useState<string | null>(null);
+  const [savedSetups, setSavedSetups] = useState<SavedSetup[]>([]);
+  const [playbookMessage, setPlaybookMessage] = useState("");
+  const canvasRef = useRef<PlayCanvasHandle>(null);
+  const guideRef = useRef<HTMLDialogElement>(null);
+  const finishPlayback = useCallback(() => setPlayback("idle"), []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/data/players.json", { cache: "no-store", signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Player data unavailable");
+        return response.json() as Promise<DataFile>;
+      })
+      .then((file) => {
+        if (!file.players.length) throw new Error("Player data is empty");
+        setLineup(defaults.map((name, index) => file.players.find((player) => player.name === name)?.name ?? file.players[index % file.players.length].name));
+        try {
+          const stored = JSON.parse(localStorage.getItem(PLAYBOOK_KEY) || "[]");
+          if (Array.isArray(stored)) setSavedSetups(stored);
+        } catch {
+          // The court remains available when browser storage is unavailable.
+        }
+        setData(file);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadError(true);
+      });
+    return () => controller.abort();
+  }, []);
+
+  if (!data) {
+    return (
+      <main className="play-lab">
+        <h1 className="play-title">Play Lab</h1>
+        <p className="play-subtitle" role="status">{loadError ? "Player data couldn’t be loaded. Reload the page to try again." : "Loading the court…"}</p>
+      </main>
+    );
+  }
+
+  const roster = data.players;
+  const selectedPlayers = lineup.map((name) => roster.find((player) => player.name === name)!);
   const grades = actionGrades(preset, selectedPlayers).map((grade) => ({ ...grade, score: Math.round(grade.score) }));
   const weakest = [...grades].sort((a, b) => a.score - b.score)[0];
-  const selectedRead = reads[preset].find((item) => item.id === read) || reads[preset][0];
-  const defenseTargets = { ...coverageLayouts[coverage], X1: coverage === "switch" ? selectedRead.target : [selectedRead.target[0] + (coverage === "ice" ? -8 : 0), selectedRead.target[1] + 6] as [number, number] };
-  const resetCourt = () => setCourt((players) => players.map((player) => player.offense ? initialCourt.find((initial) => initial.id === player.id)! : { ...player, x: coverageLayouts[coverage][player.id][0], y: coverageLayouts[coverage][player.id][1] }));
-  const setCoverage = (next: Coverage) => { setPlaying(false); setCoverageState(next); setCourt((players) => players.map((player) => player.offense ? player : { ...player, x: coverageLayouts[next][player.id][0], y: coverageLayouts[next][player.id][1] })); };
-  const persist = (next: SavedSetup[]) => { setSavedSetups(next); localStorage.setItem(PLAYBOOK_KEY, JSON.stringify(next)); };
-  const currentSetup = (): SavedSetup => ({ id: crypto.randomUUID(), name: setupName.trim() || `${presets.find((item) => item.id === preset)!.title} vs ${coverage}`, savedAt: new Date().toISOString(), lineup, court, preset, coverage, read, customRoutes, ballRoute });
-  const saveSetup = () => { persist([currentSetup(), ...savedSetups]); setSetupName(""); };
-  const loadSetup = (setup: SavedSetup) => { setPlaying(false); setLineup(setup.lineup); setCourt(setup.court); setPreset(setup.preset); setCoverageState(setup.coverage); setRead(setup.read); setCustomRoutes(setup.customRoutes || {}); setBallRoute(setup.ballRoute || []); setAnimationKey((key) => key + 1); };
-  const exportSetup = (setup?: SavedSetup) => { void setup; window.dispatchEvent(new Event("playlab-export-image")); };
-  return <main className="min-h-[calc(100vh-4rem)] court-texture px-6 py-8 md:px-8"><div className="max-w-[1500px] mx-auto"><p className="font-display text-xs tracking-[0.22em] text-amber uppercase">Interactive strategy board</p><h1 className="font-display text-4xl uppercase tracking-wide mt-2">Play Lab</h1><p className="text-text-dim text-sm mt-2 max-w-2xl">Build a five-player lineup, choose an action and defensive coverage, then choose the next read. Route animation is a tactical diagram—not a game prediction.</p><div className="grid gap-6 mt-8 xl:grid-cols-[300px_minmax(0,1fr)_300px]"><aside className="space-y-4"><section className="play-panel"><h2 className="play-heading">Your lineup</h2>{lineup.map((name, index) => <label key={index} className="block text-xs text-text-faint mt-3">Spot {index + 1}<select value={name} onChange={(event) => setLineup((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} className="play-select">{data.players.map((player) => <option key={player.name} value={player.name}>{player.name} · {player.team}</option>)}</select></label>)}</section><section className="play-panel"><h2 className="play-heading">Action</h2><div className="space-y-2 mt-3">{presets.map((item) => <button key={item.id} onClick={() => { setPreset(item.id); setRead(reads[item.id][0].id); setPlaying(false); }} className={`play-preset ${preset === item.id ? "play-preset-active" : ""}`}><span>{item.title}</span><small>{item.description}</small></button>)}</div></section><section className="play-panel"><h2 className="play-heading">Coverage</h2><div className="grid grid-cols-2 gap-2 mt-3">{coverages.map((item) => <button key={item.id} onClick={() => setCoverage(item.id)} className={`coverage-button ${coverage === item.id ? "coverage-active" : ""}`}><span>{item.label}</span><small>{item.text}</small></button>)}</div></section></aside><section><div className="play-toolbar"><span className="text-xs text-text-faint"><i className="play-dot bg-amber" /> offense <i className="play-dot bg-sky-400 ml-3" /> defense</span><div className="flex gap-2"><button onClick={resetCourt} className="play-reset">Reset court</button><button onClick={() => { if (!playing) setAnimationKey((key) => key + 1); setPlaying((value) => !value); }} className="play-button">{playing ? "Pause" : "Run 3x"}</button></div></div><PlayCanvas players={court} preset={preset} playing={playing} readTarget={selectedRead.target} defenseTargets={defenseTargets} resetKey={animationKey} onComplete={() => setPlaying(false)} onMove={(id, x, y) => setCourt((items) => items.map((item) => item.id === id ? { ...item, x, y } : item))} /><p className="text-xs text-text-faint mt-2">The ball stays with the handler until the selected pass develops. Each run plays three times, then stops.</p></section><aside className="space-y-4"><section className="play-panel"><h2 className="play-heading">Choose the read</h2><div className="space-y-2 mt-3">{reads[preset].map((item) => <button key={item.id} onClick={() => { setRead(item.id); setPlaying(false); }} className={`play-preset ${read === item.id ? "play-preset-active" : ""}`}>{item.label}</button>)}</div><p className="text-sm text-text-dim leading-relaxed mt-4">{outcome(selectedRead.label, coverage)}</p></section><section className="play-panel"><h2 className="play-heading">Save to playbook</h2><input value={setupName} onChange={(event) => setSetupName(event.target.value)} placeholder="Name this setup…" className="play-input mt-3" /><div className="flex gap-2 mt-2"><button onClick={saveSetup} className="play-button">Save setup</button><button onClick={() => exportSetup()} className="play-reset">Export JSON</button></div>{savedSetups.length > 0 && <ul className="mt-4 space-y-2">{savedSetups.slice(0, 5).map((setup) => <li key={setup.id} className="saved-setup"><button onClick={() => loadSetup(setup)} className="text-left text-text-dim hover:text-amber truncate">{setup.name}</button><div className="flex gap-2"><button onClick={() => exportSetup(setup)} className="saved-action">Export</button><button onClick={() => persist(savedSetups.filter((item) => item.id !== setup.id))} className="saved-action">Delete</button></div></li>)}</ul>}</section><section className="play-panel"><h2 className="play-heading">{presets.find((item) => item.id === preset)!.title} fit</h2><p className="text-xs text-text-faint mt-1">Calibrated from actual per-game stat thresholds, not archetype percentiles.</p><div className="space-y-3 mt-4">{grades.map((area) => <div key={area.label}><div className="flex justify-between text-xs text-text-dim"><span>{area.label}</span><span className="tabular">{area.score}</span></div><div className="fit-track"><div className="fit-fill bg-amber" style={{ width: `${area.score}%` }} /></div></div>)}</div></section><section className="play-panel"><p className="play-heading">Action note</p><p className="text-sm text-text-dim leading-relaxed mt-2">For this action, your biggest opportunity is <span className="text-amber">{weakest.label.toLowerCase()}</span>. Consider adding a <span className="text-text">{weakest.suggestion}</span> profile.</p></section></aside></div></div></main>;
+  const action = presets.find((item) => item.id === preset)!;
+  const coverageOption = coverages.find((item) => item.id === coverage)!;
+  const selectedRead = reads[preset].find((item) => item.id === read) ?? reads[preset][0];
+  const receiver = receiverOverride ?? selectedRead.receiver;
+  const defenseTargets = {
+    ...coverageLayouts[coverage],
+    X1: coverage === "switch" ? selectedRead.target : [selectedRead.target[0] + (coverage === "ice" ? -8 : 0), selectedRead.target[1] + 6] as Point,
+  };
+
+  function resetPositions(nextCoverage: Coverage) {
+    setPlayback("idle");
+    setCourt(initialCourt.map((player) => {
+      if (player.offense) return player;
+      const [x, y] = coverageLayouts[nextCoverage][player.id];
+      return { ...player, x, y };
+    }));
+  }
+
+  function chooseCoverage(next: Coverage) {
+    setPlayback("idle");
+    setCoverage(next);
+    setCourt((players) => players.map((player) => {
+      if (player.offense) return player;
+      const [x, y] = coverageLayouts[next][player.id];
+      return { ...player, x, y };
+    }));
+  }
+
+  function persist(next: SavedSetup[], message: string) {
+    try {
+      localStorage.setItem(PLAYBOOK_KEY, JSON.stringify(next));
+      setSavedSetups(next);
+      setPlaybookMessage(message);
+      return true;
+    } catch {
+      setPlaybookMessage("Couldn’t update the playbook. Browser storage may be unavailable.");
+      return false;
+    }
+  }
+
+  function currentSetup(): SavedSetup {
+    return {
+      id: crypto.randomUUID(),
+      name: setupName.trim() || `${action.title} vs. ${coverageOption.label}`,
+      savedAt: new Date().toISOString(),
+      lineup, court, preset, coverage, read, customRoutes, ballRoute, receiverOverride, courtType,
+    };
+  }
+
+  function loadSetup(setup: SavedSetup) {
+    setPlayback("idle");
+    setLineup(setup.lineup.map((name, index) => roster.some((player) => player.name === name) ? name : lineup[index]));
+    setCourt(setup.court);
+    setPreset(setup.preset);
+    setCoverage(setup.coverage);
+    setRead(setup.read);
+    setCustomRoutes(setup.customRoutes ?? {});
+    setBallRoute(setup.ballRoute ?? []);
+    setReceiverOverride(setup.receiverOverride ?? null);
+    setCourtType(setup.courtType ?? "indoor");
+    setPlaybookMessage(`Loaded ${setup.name}.`);
+  }
+
+  function exportSetup(setup: SavedSetup) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(setup, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    const filename = setup.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    link.download = `${filename || "play-lab-setup"}.json`;
+    link.href = url;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  return (
+    <main className="play-lab">
+      <header className="play-page-header">
+        <div>
+          <h1 className="play-title">Play Lab</h1>
+          <p className="play-subtitle">Build a lineup and see how it runs against different coverages.</p>
+        </div>
+        <button className="play-secondary" onClick={() => guideRef.current?.showModal()}>
+          <span className="play-help-icon" aria-hidden="true">?</span> <span>Help</span>
+        </button>
+      </header>
+
+      <div className="play-workspace">
+        <section className="play-card play-board" aria-labelledby="court-heading">
+          <header className="play-board-header">
+            <div>
+              <h2 id="court-heading" className="play-card-title">Half court</h2>
+              <div className="play-legend" aria-label="Court legend">
+                <span><i className="play-marker play-marker-offense" /> Offense</span>
+                <span><i className="play-marker play-marker-defense" /> Defense</span>
+              </div>
+            </div>
+            <button className="play-primary play-run" onClick={() => setPlayback(playback === "playing" ? "paused" : "playing")}>
+              <span aria-hidden="true" className={playback === "playing" ? "play-pause-icon" : "play-run-icon"} />
+              {playback === "playing" ? "Pause play" : playback === "paused" ? "Resume play" : "Run play"}
+            </button>
+          </header>
+
+          <PlayCanvas
+            ref={canvasRef}
+            players={court}
+            preset={preset}
+            playback={playback}
+            receiver={receiver}
+            defenseTargets={defenseTargets}
+            mode={mode}
+            editing={editing}
+            courtType={courtType}
+            customRoutes={customRoutes}
+            ballRoute={ballRoute}
+            onComplete={finishPlayback}
+            onRoute={(id, route) => setCustomRoutes((routes) => ({ ...routes, [id]: route }))}
+            onReceiverChange={setReceiverOverride}
+            onMove={(id, x, y) => setCourt((items) => items.map((item) => item.id === id ? { ...item, x, y } : item))}
+          />
+
+          <details className="play-disclosure play-court-tools" onToggle={(event) => setEditing(event.currentTarget.open)}>
+            <summary>
+              <span>Drawing tools</span>
+              {Object.keys(customRoutes).length > 0 && <small>{Object.keys(customRoutes).length} drawn</small>}
+            </summary>
+            <div className="play-tools-body">
+              <div role="group" aria-label="Drawing mode" className="play-options play-options-two">
+                <button className="play-option" aria-pressed={mode === "move"} onClick={() => { setPlayback("idle"); setMode("move"); }}>Move markers</button>
+                <button className="play-option" aria-pressed={mode === "route"} onClick={() => { setPlayback("idle"); setMode("route"); }}>Draw routes</button>
+              </div>
+              <p className="play-copy">{mode === "route" ? "Drag from an offensive marker to draw its route." : "Drag a marker to move it, or drag the ball to choose a receiver."}</p>
+              <div className="play-tool-fields">
+                <label>Court surface
+                  <select value={courtType} onChange={(event) => setCourtType(event.target.value as CourtType)}>
+                    <option value="indoor">Indoor</option>
+                    <option value="outdoor">Outdoor</option>
+                  </select>
+                </label>
+                <label>Ball target
+                  <select value={receiverOverride ?? ""} onChange={(event) => { setPlayback("idle"); setReceiverOverride(event.target.value || null); }}>
+                    <option value="">Use selected read</option>
+                    {lineup.map((name, index) => <option key={index} value={`O${index + 1}`}>{index + 1} · {name}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="play-button-row">
+                <button className="play-secondary" onClick={() => resetPositions(coverage)}>Reset positions</button>
+                <button className="play-secondary" disabled={!Object.keys(customRoutes).length && !ballRoute.length} onClick={() => { setPlayback("idle"); setCustomRoutes({}); setBallRoute([]); }}>Clear drawings</button>
+              </div>
+            </div>
+          </details>
+        </section>
+
+        <section className="play-card play-setup" aria-labelledby="setup-heading">
+          <h2 id="setup-heading" className="play-card-title">Play setup</h2>
+          <fieldset className="play-control">
+            <legend>Action</legend>
+            <div className="play-options play-options-three">
+              {presets.map((item) => (
+                <button key={item.id} className="play-option" aria-pressed={preset === item.id} onClick={() => {
+                  setPlayback("idle");
+                  setPreset(item.id);
+                  setRead(reads[item.id][0].id);
+                  setReceiverOverride(null);
+                }}>{item.title}</button>
+              ))}
+            </div>
+            <p className="play-copy">{action.description}</p>
+          </fieldset>
+          <fieldset className="play-control">
+            <legend>Coverage</legend>
+            <div className="play-options play-options-four">
+              {coverages.map((item) => (
+                <button key={item.id} className="play-option" aria-pressed={coverage === item.id} onClick={() => chooseCoverage(item.id)}>{item.label}</button>
+              ))}
+            </div>
+            <p className="play-copy">{coverageOption.text}</p>
+          </fieldset>
+          <fieldset className="play-control">
+            <legend>Read</legend>
+            <div className="play-reads">
+              {reads[preset].map((item) => (
+                <button key={item.id} className="play-read" aria-pressed={selectedRead.id === item.id} onClick={() => {
+                  setPlayback("idle");
+                  setRead(item.id);
+                  setReceiverOverride(null);
+                }}>
+                  <span className="play-read-indicator" aria-hidden="true" />
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <p className="play-scouting-note">
+            {receiverOverride ? `Ball target set to ${lineup[Number(receiverOverride.slice(1)) - 1]}.` : coverageNotes[coverage]}
+          </p>
+        </section>
+      </div>
+
+      <div className="play-support">
+        <details className="play-card play-disclosure">
+          <summary><span>Your lineup</span><small>{lineup.length} players</small></summary>
+          <ol className="play-lineup">
+            {lineup.map((name, index) => (
+              <li key={index}>
+                <label>
+                  <span className="play-spot" aria-hidden="true">{index + 1}</span>
+                  <span className="sr-only">Lineup spot {index + 1}</span>
+                  <select value={name} onChange={(event) => setLineup((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}>
+                    {roster.map((player) => <option key={player.name} value={player.name}>{player.name} · {player.team}</option>)}
+                  </select>
+                </label>
+              </li>
+            ))}
+          </ol>
+        </details>
+        <details className="play-card play-disclosure">
+          <summary><span>Lineup fit</span><small>{action.title}</small></summary>
+          <div className="play-fit">
+            {grades.map((area) => (
+              <div key={area.label}>
+                <div className="play-fit-label"><span>{area.label}</span><span className="tabular">{area.score}<span className="sr-only"> out of 100</span></span></div>
+                <div className="fit-track" aria-hidden="true"><div className="fit-fill bg-amber" style={{ width: `${area.score}%` }} /></div>
+              </div>
+            ))}
+            <p className="play-copy">For more {weakest.label.toLowerCase()}, try a <strong>{weakest.suggestion}</strong>.</p>
+            <p className="play-copy">Scores use per-game stat thresholds.</p>
+          </div>
+        </details>
+      </div>
+
+      <details className="play-card play-disclosure play-playbook">
+        <summary><span>Playbook</span><small>{savedSetups.length} saved</small></summary>
+        <div className="play-playbook-body">
+          <form className="play-save-form" onSubmit={(event) => {
+            event.preventDefault();
+            const setup = currentSetup();
+            if (persist([setup, ...savedSetups], `Saved ${setup.name}.`)) setSetupName("");
+          }}>
+            <label>Setup name
+              <input value={setupName} onChange={(event) => setSetupName(event.target.value)} placeholder={`${action.title} vs. ${coverageOption.label}`} />
+            </label>
+            <button className="play-primary" type="submit">Save setup</button>
+          </form>
+          <div className="play-button-row">
+            <button className="play-secondary" onClick={() => exportSetup(currentSetup())}>Export JSON</button>
+            <button className="play-secondary" onClick={() => canvasRef.current?.exportPng()}>Download court image</button>
+          </div>
+          <p role="status" className="play-copy">{playbookMessage}</p>
+          {savedSetups.length > 0 && (
+            <ul className="play-saved-list">
+              {savedSetups.map((setup) => (
+                <li key={setup.id}>
+                  <span>{setup.name}</span>
+                  <div className="play-button-row">
+                    <button className="play-secondary" aria-label={`Load ${setup.name}`} onClick={() => loadSetup(setup)}>Load</button>
+                    <button className="play-secondary" aria-label={`Export ${setup.name} as JSON`} onClick={() => exportSetup(setup)}>Export</button>
+                    <button className="play-secondary" aria-label={`Delete ${setup.name}`} onClick={() => persist(savedSetups.filter((item) => item.id !== setup.id), `Deleted ${setup.name}.`)}>Delete</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </details>
+
+      <dialog className="play-guide" ref={guideRef} aria-labelledby="play-guide-title">
+        <h2 id="play-guide-title" className="play-card-title">Using Play Lab</h2>
+        <ol>
+          <li>Pick an action, coverage, and read. Run play animates the sequence three times.</li>
+          <li>Open Drawing tools to move markers, draw routes, or choose a different pass target.</li>
+          <li>Change the five players under Your lineup. Save your setup in the Playbook to run it again later.</li>
+        </ol>
+        <form method="dialog"><button className="play-primary">Done</button></form>
+      </dialog>
+    </main>
+  );
 }

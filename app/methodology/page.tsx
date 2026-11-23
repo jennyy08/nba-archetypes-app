@@ -11,7 +11,7 @@ type DataFile = { season: string; players: Player[] };
 const principles = [
   ["Intentional roles", "Archetypes are weighted statistical models for recognizable basketball roles—not labels guessed from a random cluster."],
   ["Relative fit", "Scores are percentiles within the selected season. A score of 90 means that player fits the role more strongly than most players in this data set."],
-  ["Exploration, kept separate", "Profile Lab uses k-means to surface custom statistical groupings. Because its output changes with the selected inputs, it does not define a player’s stable role."],
+  ["Custom groups", "In Explore Roles, choose which stats to use and k-means groups players with similar profiles. Players keep their primary role while you experiment."],
 ];
 
 export default function MethodologyPage() {
@@ -50,7 +50,7 @@ export default function MethodologyPage() {
         </div>
       </section>
 
-      <div className="flex flex-wrap gap-3 mt-10"><Link href="/" className="rounded bg-amber px-4 py-2 text-sm font-medium text-court-bg">Explore roles</Link><Link href="/compare" className="rounded border border-court-border px-4 py-2 text-sm text-text-dim hover:text-text">Compare players</Link><Link href="/profile-lab" className="rounded border border-court-border px-4 py-2 text-sm text-text-dim hover:text-text">Open Profile Lab</Link></div>
+      <div className="flex flex-wrap gap-3 mt-10"><Link href="/" className="rounded bg-amber px-4 py-2 text-sm font-medium text-court-bg">Explore roles</Link><Link href="/compare" className="rounded border border-court-border px-4 py-2 text-sm text-text-dim hover:text-text">Compare players</Link><Link href="/#custom-groups" className="rounded border border-court-border px-4 py-2 text-sm text-text-dim hover:text-text">Try custom groups</Link></div>
     </div>
   </main>;
 }

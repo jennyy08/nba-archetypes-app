@@ -1,90 +1,140 @@
 "use client";
 
-import { useMemo } from "react";
-import { clusterColor } from "@/lib/constants";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 export type PlotPoint = {
   index: number;
   x: number;
   y: number;
-  cluster: number;
+  color: string;
+  visible: boolean;
   name: string;
   team: string;
 };
 
-export default function ScatterPlot({
-  points,
-  selectedIndex,
-  neighborIndices,
-  onSelect,
-}: {
+const GRID_COLUMNS = 8;
+const GRID_ROWS = 6;
+
+export default function ScatterPlot({ points, selectedIndex, neighborIndices, onSelect }: {
   points: PlotPoint[];
   selectedIndex: number | null;
   neighborIndices: number[];
   onSelect: (index: number) => void;
 }) {
-  const WIDTH = 900;
-  const HEIGHT = 620;
-  const PAD = 40;
+  const container = useRef<HTMLDivElement>(null);
+  const [{ width, height }, setSize] = useState({ width: 900, height: 460 });
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const padding = width < 480 ? 19 : 32;
 
-  const { scaleX, scaleY } = useMemo(() => {
-    const xs = points.map((p) => p.x);
-    const ys = points.map((p) => p.y);
-    const xMin = Math.min(...xs), xMax = Math.max(...xs);
-    const yMin = Math.min(...ys), yMax = Math.max(...ys);
-    const xRange = xMax - xMin || 1;
-    const yRange = yMax - yMin || 1;
+  useEffect(() => {
+    const target = container.current;
+    if (!target) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width && height) setSize({ width, height });
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
 
-    return {
-      scaleX: (v: number) => PAD + ((v - xMin) / xRange) * (WIDTH - 2 * PAD),
-      // flip Y so higher values go up, matching normal chart convention
-      scaleY: (v: number) => HEIGHT - PAD - ((v - yMin) / yRange) * (HEIGHT - 2 * PAD),
-    };
-  }, [points]);
+  const visiblePoints = useMemo(() => {
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const xMin = Math.min(...xs);
+    const yMin = Math.min(...ys);
+    const xRange = Math.max(...xs) - xMin;
+    const yRange = Math.max(...ys) - yMin;
 
-  const neighborSet = new Set(neighborIndices);
+    return points.filter((point) => point.visible).map((point) => ({
+      ...point,
+      cx: padding + (xRange ? (point.x - xMin) / xRange : 0.5) * (width - 2 * padding),
+      cy: height - padding - (yRange ? (point.y - yMin) / yRange : 0.5) * (height - 2 * padding),
+    }));
+  }, [points, width, height, padding]);
+
+  const selected = visiblePoints.find((point) => point.index === selectedIndex);
+  const hovered = visiblePoints.find((point) => point.index === hoveredIndex);
+  const highlightedNeighbors = new Set(neighborIndices);
+
+  function closestPoint(event: { currentTarget: SVGSVGElement; clientX: number; clientY: number }, radius: number) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - rect.left) * width / rect.width;
+    const y = (event.clientY - rect.top) * height / rect.height;
+    let closest: number | null = null;
+    let smallestDistance = radius ** 2;
+    for (const point of visiblePoints) {
+      const distance = (x - point.cx) ** 2 + (y - point.cy) ** 2;
+      if (distance < smallestDistance) {
+        smallestDistance = distance;
+        closest = point.index;
+      }
+    }
+    return closest;
+  }
 
   return (
-    <svg
-      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      className="w-full h-auto rounded-lg border border-court-border bg-court-panel"
-      role="img"
-      aria-label="Scatter plot of NBA players clustered by playstyle"
-    >
-      {/* faint axis lines through the origin-ish center */}
-      <line x1={PAD} y1={HEIGHT / 2} x2={WIDTH - PAD} y2={HEIGHT / 2} stroke="var(--color-court-border)" strokeWidth={1} />
-      <line x1={WIDTH / 2} y1={PAD} x2={WIDTH / 2} y2={HEIGHT - PAD} stroke="var(--color-court-border)" strokeWidth={1} />
+    <div ref={container} data-scatter-plot>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="Player map. Nearby points represent players with similar stats. Use player search to select a player by name."
+        onClick={(event) => {
+          const index = closestPoint(event, 13);
+          if (index !== null) onSelect(index);
+        }}
+        onPointerMove={(event) => {
+          if (event.pointerType !== "touch") setHoveredIndex(closestPoint(event, 9));
+        }}
+        onPointerLeave={() => setHoveredIndex(null)}
+      >
+        <g data-plot-grid aria-hidden="true">
+          {Array.from({ length: GRID_COLUMNS + 1 }, (_, index) => {
+            const x = padding + index * (width - 2 * padding) / GRID_COLUMNS;
+            return <line key={`x${index}`} x1={x} x2={x} y1={padding} y2={height - padding} />;
+          })}
+          {Array.from({ length: GRID_ROWS + 1 }, (_, index) => {
+            const y = padding + index * (height - 2 * padding) / GRID_ROWS;
+            return <line key={`y${index}`} x1={padding} x2={width - padding} y1={y} y2={y} />;
+          })}
+        </g>
 
-      {points.map((p) => {
-        const isSelected = p.index === selectedIndex;
-        const isNeighbor = neighborSet.has(p.index);
-        const cx = scaleX(p.x);
-        const cy = scaleY(p.y);
+        {visiblePoints.map((point) => (
+          <circle
+            key={point.index}
+            cx={point.cx}
+            cy={point.cy}
+            r={width < 480 ? 3 : 3.6}
+            data-plot-point
+            style={{ "--point-color": point.color } as CSSProperties}
+          />
+        ))}
 
-        return (
-          <g key={p.index}>
-            {isSelected && (
-              <circle cx={cx} cy={cy} r={13} fill="none" stroke="var(--color-amber)" strokeWidth={2} opacity={0.9} />
-            )}
-            {isNeighbor && (
-              <circle cx={cx} cy={cy} r={10} fill="none" stroke="var(--color-text)" strokeWidth={1.5} opacity={0.7} />
-            )}
-            <circle
-              cx={cx}
-              cy={cy}
-              r={isSelected ? 6 : 4.5}
-              fill={clusterColor(p.cluster)}
-              opacity={isSelected || isNeighbor ? 1 : 0.75}
-              stroke="var(--color-court-bg)"
-              strokeWidth={1}
-              className="cursor-pointer transition-opacity hover:opacity-100"
-              onClick={() => onSelect(p.index)}
-            >
-              <title>{`${p.name} (${p.team})`}</title>
-            </circle>
+        {visiblePoints.filter((point) => highlightedNeighbors.has(point.index)).map((point) => (
+          <circle key={point.index} cx={point.cx} cy={point.cy} r={6} data-plot-neighbor />
+        ))}
+
+        {selected && (
+          <g aria-hidden="true">
+            <circle cx={selected.cx} cy={selected.cy} r={8.5} data-plot-selected />
+            <circle cx={selected.cx} cy={selected.cy} r={4.3} data-plot-point style={{ "--point-color": selected.color } as CSSProperties} />
           </g>
-        );
-      })}
-    </svg>
+        )}
+
+        {hovered && <circle cx={hovered.cx} cy={hovered.cy} r={6.5} data-plot-neighbor />}
+      </svg>
+      {hovered && (
+        <div
+          data-plot-tooltip
+          aria-hidden="true"
+          style={{
+            left: Math.min(Math.max(hovered.cx, 108), width - 108),
+            top: hovered.cy,
+            transform: hovered.cy < 64 ? "translate(-50%, 12px)" : "translate(-50%, calc(-100% - 12px))",
+          }}
+        >
+          <span>{hovered.name}</span><small>{hovered.team}</small>
+        </div>
+      )}
+    </div>
   );
 }

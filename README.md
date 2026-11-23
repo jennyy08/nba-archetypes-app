@@ -4,8 +4,7 @@ An interactive NBA analytics platform for exploring player roles, comparing prof
 
 ## What it does
 
-- **Explore Roles** — browse players on a 2D profile map, filter by stable archetypes, search players, and inspect similar-player results.
-- **Profile Lab** — choose the statistics and number of clusters, then recompute k-means groups and a PCA projection live in the browser.
+- **Explore Roles** — browse players on a 2D profile map, filter by stable archetypes, search players, and inspect similar-player results. Open **Custom groups** to choose the statistics and number of groups for live clustering.
 - **Compare Players** — compare two players through role-fit bars, key stats, shared strengths, and biggest differences.
 - **Player Profiles** — use shareable `/players/[name]` pages for a player’s role fit, stat profile, and nearest statistical matches.
 - **Methodology & Roles** — inspect how the model works and browse all ten archetypes with their strongest current examples.
@@ -26,7 +25,7 @@ An interactive NBA analytics platform for exploring player roles, comparing prof
 The app deliberately separates two kinds of analysis:
 
 1. **Stable archetypes** are intentional weighted statistical models for basketball roles such as Primary Ball Handler, 3-and-D Wing, Stretch Big, and Rim Protector. Scores are percentiles within the loaded season’s player pool.
-2. **Profile Lab** is exploratory. Users can change features and `k`, so cluster labels are recalculated rather than treated as fixed player identities.
+2. **Custom groups** in Explore Roles recomputes k-means groups and a PCA projection from the stats and number of groups you select.
 
 The client-side analytics pipeline in `lib/stats.ts`:
 
@@ -64,7 +63,7 @@ With the Flask service running at `http://localhost:5001`, use **Load latest NBA
 public/data/players.json
 ```
 
-That JSON file is the frontend’s default data source, so Explore Roles, Compare Players, Player Profiles, Profile Lab, and Play Lab all use the same refreshed data after reload.
+That JSON file is the frontend’s default data source, so Explore Roles, Compare Players, Player Profiles, and Play Lab all use the same refreshed data after reload.
 
 ## Project structure
 
@@ -75,7 +74,7 @@ app/
   methodology/page.tsx        # Methodology + archetype directory
   play-lab/page.tsx           # Interactive strategy board
   players/[name]/page.tsx     # Shareable player profile
-  profile-lab/page.tsx        # Custom clustering workspace
+  profile-lab/page.tsx        # Redirect to Explore Roles custom groups
 components/
   ScatterPlot.tsx             # Hand-built SVG profile map
   PlayCanvas.tsx              # Vanilla Canvas court and animation
