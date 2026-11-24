@@ -106,6 +106,7 @@ export default function ScatterPlot({ points, selectedIndex, neighborIndices, on
             cy={point.cy}
             r={width < 480 ? 3 : 3.6}
             data-plot-point
+            data-plot-muted={selected && point.index !== selected.index && !highlightedNeighbors.has(point.index) ? true : undefined}
             style={{ "--point-color": point.color } as CSSProperties}
           />
         ))}

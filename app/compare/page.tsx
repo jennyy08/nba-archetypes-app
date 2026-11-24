@@ -1,13 +1,13 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import PlayerHeadshot from "@/components/PlayerHeadshot";
 import StatsUpdated from "@/components/StatsUpdated";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ARCHETYPES, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
 import { formatPercentile, formatPlayerStat, ROLE_FIT_EXPLANATION } from "@/lib/player-format";
-import { normalizePlayerName } from "@/lib/player-search";
+import { FEATURED_MATCHUP, normalizePlayerName } from "@/lib/player-search";
 import { scoreArchetypes, standardize, type ArchetypeResult, type PlayerRecord } from "@/lib/stats";
 import styles from "./compare.module.css";
 
@@ -37,15 +37,17 @@ export default function ComparePage() {
 }
 
 function CompareFromUrl() {
-  const player = useSearchParams().get("player")?.trim() ?? "";
-  return <CompareExperience key={player} linkedPlayer={player} />;
+  const search = useSearchParams();
+  const player = search.get("player")?.trim() ?? "";
+  const opponent = search.get("opponent")?.trim() ?? "";
+  return <CompareExperience key={JSON.stringify([player, opponent])} linkedPlayer={player} linkedOpponent={opponent} />;
 }
 
-function CompareExperience({ linkedPlayer }: { linkedPlayer: string }) {
+function CompareExperience({ linkedPlayer, linkedOpponent }: { linkedPlayer: string; linkedOpponent: string }) {
   const [data, setData] = useState<DataFile | null>(null);
   const [failed, setFailed] = useState(false);
   const [leftOverride, setLeftIndex] = useState<number | null>();
-  const [rightIndex, setRightIndex] = useState<number | null>(null);
+  const [rightOverride, setRightIndex] = useState<number | null>();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,17 +75,19 @@ function CompareExperience({ linkedPlayer }: { linkedPlayer: string }) {
   }, [data]);
 
   const players = data?.players ?? [];
-  const requestedName = normalizePlayerName(linkedPlayer);
-  const linkedIndex = requestedName ? players.findIndex(({ name }) => normalizePlayerName(name) === requestedName) : -1;
-  const leftIndex = leftOverride === undefined ? (linkedIndex < 0 ? null : linkedIndex) : leftOverride;
-  const unavailablePlayer = requestedName && leftOverride === undefined && linkedIndex < 0;
+  const leftFromLink = findLinkedPlayer(players, linkedPlayer);
+  const rightFromLink = findLinkedPlayer(players, linkedOpponent);
+  const leftIndex = leftOverride === undefined ? leftFromLink : leftOverride;
+  const rightIndex = rightOverride === undefined ? rightFromLink : rightOverride;
+  const unavailablePlayer = (linkedPlayer && leftOverride === undefined && leftFromLink === null)
+    || (linkedOpponent && rightOverride === undefined && rightFromLink === null);
   const left = leftIndex === null ? null : players[leftIndex];
   const right = rightIndex === null ? null : players[rightIndex];
   const comparison = !stats || leftIndex === null || rightIndex === null ? null : buildComparison(
     stats.fits[leftIndex], stats.fits[rightIndex], stats.scaled[leftIndex], stats.scaled[rightIndex],
   );
-  const curry = players.findIndex((player) => player.name === "Stephen Curry");
-  const james = players.findIndex((player) => player.name === "LeBron James");
+  const curry = players.findIndex((player) => player.name === FEATURED_MATCHUP.first);
+  const james = players.findIndex((player) => player.name === FEATURED_MATCHUP.second);
 
   return (
     <main className="scouting-page">
@@ -119,7 +123,7 @@ function CompareExperience({ linkedPlayer }: { linkedPlayer: string }) {
             </p>
             {!left && !right && curry >= 0 && james >= 0 && (
               <button type="button" className={styles.example} onClick={() => { setLeftIndex(curry); setRightIndex(james); }}>
-                Try Curry vs. LeBron <span aria-hidden="true">→</span>
+                Try {FEATURED_MATCHUP.label} <span aria-hidden="true">→</span>
               </button>
             )}
           </div>
@@ -178,6 +182,13 @@ function CompareExperience({ linkedPlayer }: { linkedPlayer: string }) {
       )}
     </main>
   );
+}
+
+function findLinkedPlayer(players: PlayerRecord[], name: string) {
+  if (!name) return null;
+  const normalized = normalizePlayerName(name);
+  const index = players.findIndex((player) => normalizePlayerName(player.name) === normalized);
+  return index >= 0 ? index : null;
 }
 
 function PlayerPicker({ side, player, players, onSelect }: {
@@ -267,24 +278,9 @@ function PlayerPicker({ side, player, players, onSelect }: {
 }
 
 function Portrait({ player }: { player: PlayerRecord | null }) {
-  const [unavailable, setUnavailable] = useState(false);
-  const id = player?.playerId;
-  const hasPhoto = typeof id === "number" && Number.isInteger(id) && id > 0 && !unavailable;
-  const initials = player?.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("");
-
   return (
     <div className={styles.portrait} aria-hidden="true">
-      {hasPhoto ? (
-        <Image
-          src={`https://cdn.nba.com/headshots/nba/latest/260x190/${id}.png`}
-          alt=""
-          width={260}
-          height={190}
-          unoptimized
-          loading="eager"
-          onError={() => setUnavailable(true)}
-        />
-      ) : player ? <span className={styles.initials}>{initials}</span>
+      {player ? <PlayerHeadshot player={player} fallbackClassName={styles.initials} eager />
         : <span className={styles.silhouette} />}
     </div>
   );

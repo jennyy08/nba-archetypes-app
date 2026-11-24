@@ -1,0 +1,146 @@
+.identity {
+  display: grid;
+  grid-template-columns: clamp(8rem, 16vw, 12rem) minmax(0, 1fr) auto;
+  grid-template-areas:
+    "portrait details actions"
+    "portrait stats stats";
+  align-items: center;
+  gap: 0.85rem 1.05rem;
+  min-width: 0;
+  padding: clamp(0.85rem, 2.5vw, 1.35rem);
+}
+
+.profileIdentity {
+  grid-template-columns: clamp(12rem, 21vw, 16rem) minmax(0, 1fr) auto;
+  padding: clamp(1rem, 3vw, 1.75rem);
+}
+
+.portrait {
+  grid-area: portrait;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: end center;
+  min-width: 0;
+  aspect-ratio: 1.33;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--team-accent) 38%, #26232c);
+  border-radius: 0.65rem;
+  background:
+    repeating-linear-gradient(135deg, transparent 0 13px, rgb(255 255 255 / 0.04) 13px 14px),
+    radial-gradient(ellipse at 50% 78%, color-mix(in srgb, var(--team-accent) 40%, #201c20), #1d191c 74%);
+}
+
+.portrait::before {
+  position: absolute;
+  z-index: -1;
+  inset: 18% 19% auto;
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in srgb, var(--team-accent) 48%, transparent);
+  border-radius: 50%;
+  content: "";
+}
+
+.portrait img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+}
+
+.initials {
+  align-self: center;
+  color: #f6eee4;
+  font-family: var(--font-oswald), sans-serif;
+  font-size: clamp(1.5rem, 5vw, 3rem);
+}
+
+.details {
+  grid-area: details;
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  align-content: center;
+}
+
+.team {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.6rem;
+  color: var(--color-text-faint);
+  font-size: 0.75rem;
+  font-weight: 550;
+}
+
+.team::before {
+  width: 0.85rem;
+  height: 0.25rem;
+  border-radius: 0.2rem;
+  background: var(--team-accent);
+  content: "";
+}
+
+.name {
+  color: var(--color-text);
+  font-family: var(--font-oswald), sans-serif;
+  font-size: clamp(1.8rem, 4.5vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.profileIdentity .name { font-size: clamp(2.05rem, 5.4vw, 4.2rem); }
+
+.role { color: var(--color-text-dim); font-size: clamp(0.8125rem, 1.6vw, 1rem); line-height: 1.4; }
+
+.stats {
+  grid-area: stats;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-self: end;
+  min-width: 0;
+  border-block: 1px solid var(--color-court-border);
+}
+
+.stats > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column-reverse;
+  gap: 0.15rem;
+  padding: 0.55rem clamp(0.38rem, 1.5vw, 1rem);
+}
+
+.stats > div + div { border-left: 1px solid var(--color-court-border); }
+.stats dt { color: var(--color-text-faint); font-size: 0.75rem; }
+.stats dd { font-size: clamp(1.15rem, 3vw, 1.8rem); line-height: 1.15; }
+
+.actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+@media (max-width: 50rem) {
+  .identity,
+  .profileIdentity {
+    grid-template-columns: clamp(6.5rem, 24vw, 9rem) minmax(0, 1fr);
+    grid-template-areas:
+      "portrait details"
+      "stats stats"
+      "actions actions";
+  }
+
+  .actions { justify-content: flex-start; }
+}
+
+@media (max-width: 24rem) {
+  .identity,
+  .profileIdentity { column-gap: 0.65rem; }
+  .team::before { width: 0.55rem; }
+}

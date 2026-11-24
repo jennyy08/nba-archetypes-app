@@ -247,10 +247,20 @@ body {
 
 .scouting-disclosure[open] > summary::after { margin-top: 0.2rem; transform: rotate(225deg); }
 
-.profile-hero { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1.5rem; border-bottom: 1px solid var(--color-court-border); padding-bottom: 2rem; }
 .profile-card { border: 1px solid var(--color-court-border); border-radius: 0.5rem; background: var(--color-court-panel); padding: 1.25rem; }
 .profile-heading { font-family: var(--font-oswald); color: var(--color-amber); font-size: 0.9rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.profile-action { border: 1px solid var(--color-court-border); border-radius: 0.3rem; padding: 0.45rem 0.65rem; color: var(--color-text-dim); font-size: 0.75rem; }
+.profile-action {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  border: 1px solid var(--color-control-border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  color: var(--color-text-dim);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.profile-action-primary { background: var(--color-accent-tint); color: var(--color-amber); }
 .profile-action:hover { color: var(--color-text); border-color: var(--color-amber); }
 
 .play-lab {

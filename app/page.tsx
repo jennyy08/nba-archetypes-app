@@ -2,10 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import PlayerHeadshot from "@/components/PlayerHeadshot";
+import PlayerIdentity from "@/components/PlayerIdentity";
 import ScatterPlot from "@/components/ScatterPlot";
 import StatsUpdated from "@/components/StatsUpdated";
 import { formatPercentile, formatPlayerStat, ROLE_FIT_EXPLANATION } from "@/lib/player-format";
-import { comparePlayerHref, normalizePlayerName } from "@/lib/player-search";
+import { comparePlayerHref, FEATURED_MATCHUP, normalizePlayerName } from "@/lib/player-search";
+import { teamAccent } from "@/lib/team-colors";
 import { kMeans, nearestNeighbors, pca2D, scoreArchetypes, standardize, type ArchetypeResult, type PlayerRecord } from "@/lib/stats";
 import { ARCHETYPES, archetypeColor, clusterColor, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
 import styles from "./explore.module.css";
@@ -14,12 +17,6 @@ type DataFile = { season: string; updatedAt?: string; players: PlayerRecord[] };
 
 const DEFAULT_GROUP_COUNT = 7;
 const ROLE_NAMES = new Map(ARCHETYPES.map(({ id, name }) => [id, name]));
-const SUMMARY_STATS = [
-  { feature: "PTS", label: "Points" },
-  { feature: "REB", label: "Rebounds" },
-  { feature: "AST", label: "Assists" },
-];
-
 export default function ExploreRolesPage() {
   const [data, setData] = useState<DataFile | null>(null);
   const [failed, setFailed] = useState(false);
@@ -123,13 +120,15 @@ export default function ExploreRolesPage() {
   if (!data || !roleMap || !map) {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>Explore Roles</h1>
+        <h1 className={styles.title}>See how they <span>play.</span></h1>
         <p className={styles.subtitle} role="status">{failed ? "Player data couldn’t be loaded. Reload the page to try again." : "Loading the player map…"}</p>
       </main>
     );
   }
 
   const players = data.players;
+  const featuredFirst = players.find(({ name }) => name === FEATURED_MATCHUP.first);
+  const featuredSecond = players.find(({ name }) => name === FEATURED_MATCHUP.second);
   const selectedPlayer = selectedIndex === null ? null : players[selectedIndex];
   const filter = ARCHETYPES.find((role) => role.id === selectedRole);
   const visibleCount = !customMap && filter ? roleMap.counts.get(filter.id) ?? 0 : players.length;
@@ -164,14 +163,16 @@ export default function ExploreRolesPage() {
   return (
     <main className={styles.page}>
       <header className={styles.header}>
-        <div>
-          <h1 className={styles.title}>Explore Roles</h1>
-          <p className={styles.subtitle}>Find NBA players by how they play.</p>
+        <div className={styles.intro}>
+          <h1 className={styles.title}>See how they <span>play.</span></h1>
+          <p className={styles.subtitle}>Find NBA players by role, see who plays like them, and compare their games.</p>
+          <PlayerSearch players={players} onSelect={choosePlayer} />
+          <div className={styles.season}>
+            <p>{data.season.replace("-", "–")} season <span aria-hidden="true">·</span> {players.length} players</p>
+            <StatsUpdated updatedAt={data.updatedAt} />
+          </div>
         </div>
-        <div className={styles.season}>
-          <p>{data.season.replace("-", "–")} season <span aria-hidden="true">·</span> {players.length} players</p>
-          <StatsUpdated updatedAt={data.updatedAt} />
-        </div>
+        {featuredFirst && featuredSecond && <FeaturedMatchup first={featuredFirst} second={featuredSecond} />}
       </header>
 
       <section className={styles.card} aria-labelledby="player-map">
@@ -180,51 +181,48 @@ export default function ExploreRolesPage() {
             <h2 className={styles.cardTitle} id="player-map" tabIndex={-1}>Player map</h2>
             <p className={styles.copy}>{customMap ? "Colors show groups based on your chosen stats." : "Colors show each player’s primary role."}</p>
           </div>
-          <div className={styles.mapTools}>
-            <PlayerSearch players={players} onSelect={choosePlayer} />
-            {!customMap && (
-              <details
-                className={styles.roleFilter}
-                onBlur={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" && event.currentTarget.open) {
-                    event.currentTarget.open = false;
-                    event.currentTarget.querySelector("summary")?.focus();
-                  }
-                }}
-              >
-                <summary>
-                  {filter && <RoleDot color={archetypeColor(filter.id)} />}
-                  <span>{filter?.shortName ?? "All roles"}</span>
-                  <span className="sr-only">, filter by role</span>
-                </summary>
-                <fieldset className={styles.roleMenu}>
-                  <legend className="sr-only">Filter by role</legend>
-                  {[{ id: "", shortName: "All roles" }, ...ARCHETYPES].map(({ id, shortName }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      aria-pressed={selectedRole === id}
-                      onClick={(event) => {
-                        chooseRole(id);
-                        const panel = event.currentTarget.closest("details");
-                        if (panel) {
-                          panel.open = false;
-                          panel.querySelector("summary")?.focus();
-                        }
-                      }}
-                    >
-                      {id && <RoleDot color={archetypeColor(id)} />}
-                      <span>{shortName}</span>
-                      <small>{id ? roleMap.counts.get(id) ?? 0 : players.length}</small>
-                    </button>
-                  ))}
-                </fieldset>
-              </details>
-            )}
-          </div>
+          {!customMap && (
+            <details
+              className={styles.roleFilter}
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && event.currentTarget.open) {
+                  event.currentTarget.open = false;
+                  event.currentTarget.querySelector("summary")?.focus();
+                }
+              }}
+            >
+              <summary>
+                {filter && <RoleDot color={archetypeColor(filter.id)} />}
+                <span>{filter?.shortName ?? "All roles"}</span>
+                <span className="sr-only">, filter by role</span>
+              </summary>
+              <fieldset className={styles.roleMenu}>
+                <legend className="sr-only">Filter by role</legend>
+                {[{ id: "", shortName: "All roles" }, ...ARCHETYPES].map(({ id, shortName }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={selectedRole === id}
+                    onClick={(event) => {
+                      chooseRole(id);
+                      const panel = event.currentTarget.closest("details");
+                      if (panel) {
+                        panel.open = false;
+                        panel.querySelector("summary")?.focus();
+                      }
+                    }}
+                  >
+                    {id && <RoleDot color={archetypeColor(id)} />}
+                    <span>{shortName}</span>
+                    <small>{id ? roleMap.counts.get(id) ?? 0 : players.length}</small>
+                  </button>
+                ))}
+              </fieldset>
+            </details>
+          )}
         </header>
 
         <div className={styles.mapFrame}>
@@ -235,7 +233,7 @@ export default function ExploreRolesPage() {
         <footer className={styles.mapFooter}>
           <p className={styles.copy} aria-live="polite">
             {filter && !customMap ? `${visibleCount} of ${players.length} players. ` : ""}
-            Nearby dots have similar stats.
+            {selectedPlayer ? "The outlines mark your player and their closest matches." : "Nearby dots have similar stats."}
           </p>
           {selectedPlayer && <a href="#player-summary" className={styles.textLink}>{selectedPlayer.name} ↓</a>}
         </footer>
@@ -316,6 +314,30 @@ export default function ExploreRolesPage() {
   );
 }
 
+function FeaturedMatchup({ first, second }: { first: PlayerRecord; second: PlayerRecord }) {
+  return (
+    <Link
+      className={styles.matchup}
+      href={comparePlayerHref(first.name, second.name)}
+      style={{ "--matchup-first": teamAccent(first.team), "--matchup-second": teamAccent(second.team) } as CSSProperties}
+      aria-label={`Compare ${first.name} and ${second.name}`}
+    >
+      <div className={styles.matchupArt} aria-hidden="true">
+        <div><PlayerHeadshot player={first} fallbackClassName={styles.matchupInitials} eager /></div>
+        <span>VS</span>
+        <div><PlayerHeadshot player={second} fallbackClassName={styles.matchupInitials} eager /></div>
+      </div>
+      <div className={styles.matchupCaption}>
+        <div>
+          <p>Featured matchup</p>
+          <strong>{FEATURED_MATCHUP.label}</strong>
+        </div>
+        <span className={styles.matchupArrow} aria-hidden="true">→</span>
+      </div>
+    </Link>
+  );
+}
+
 function RoleDot({ color }: { color: string }) {
   return <i className={styles.dot} aria-hidden="true" style={{ "--point-color": color } as CSSProperties} />;
 }
@@ -389,27 +411,13 @@ function PlayerSummary({ player, features, fits, neighbors, players, onSelect, o
 
   return (
     <>
-      <div className={styles.playerHeader}>
-        <div>
-          <h2 id="player-name" className={styles.cardTitle}>{player.name}</h2>
-          <p className={styles.playerRole}>
-            <span>{player.team}</span><RoleDot color={archetypeColor(primary.id)} />{primary.name}
-          </p>
-        </div>
-        <div className={styles.playerActions}>
-          <Link className={styles.profileLink} href={comparePlayerHref(player.name)}>Compare</Link>
+      <PlayerIdentity player={player} role={primary.name} actions={
+        <>
+          <Link className={`${styles.profileLink} ${styles.compareLink}`} href={comparePlayerHref(player.name)}>Compare</Link>
           <Link className={styles.profileLink} href={`/players/${encodeURIComponent(player.name)}`}>Full profile <span aria-hidden="true">↗</span></Link>
           <button className={styles.close} type="button" onClick={onClear} aria-label="Clear selected player">×</button>
-        </div>
-      </div>
-
-      <dl className={styles.quickStats} aria-label="Per-game averages">
-        {SUMMARY_STATS.map(({ feature, label }) => (
-          <div key={feature}>
-            <dt>{label}</dt><dd className="tabular">{formatPlayerStat(player[feature], feature)}</dd>
-          </div>
-        ))}
-      </dl>
+        </>
+      } />
 
       <div className={styles.playerDetails}>
         <details className={styles.disclosure}>
