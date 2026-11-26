@@ -7,7 +7,7 @@ import StatsUpdated from "@/components/StatsUpdated";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ARCHETYPES, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
 import { formatPercentile, formatPlayerStat, ROLE_FIT_EXPLANATION } from "@/lib/player-format";
-import { FEATURED_MATCHUP, normalizePlayerName } from "@/lib/player-search";
+import { buildPlayerSearchIndex, FEATURED_MATCHUP, findPlayerMatches, normalizePlayerName } from "@/lib/player-search";
 import { scoreArchetypes, standardize, type ArchetypeResult, type PlayerRecord } from "@/lib/stats";
 import styles from "./compare.module.css";
 
@@ -201,11 +201,8 @@ function PlayerPicker({ side, player, players, onSelect }: {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const names = useMemo(() => (players ?? []).map((candidate, index) => ({
-    candidate, index, normalized: normalizePlayerName(candidate.name),
-  })), [players]);
-  const search = normalizePlayerName(query.trim());
-  const matches = search ? names.filter(({ normalized }) => normalized.includes(search)).slice(0, 6) : [];
+  const playerIndex = useMemo(() => buildPlayerSearchIndex(players ?? []), [players]);
+  const matches = findPlayerMatches(playerIndex, query);
 
   function select(index: number) {
     onSelect(index);
@@ -264,19 +261,19 @@ function PlayerPicker({ side, player, players, onSelect }: {
           onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
           onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
         />
-        {open && search && (
+        {open && query.trim() && (
           <div className={styles.suggestions}>
             {matches.length > 0 ? (
               <ul aria-label={`${label} matches`}>
-                {matches.map(({ candidate, index }) => (
+                {matches.map(({ player: candidate, index }) => (
                   <li key={index}>
-                    <button type="button" onClick={() => select(index)}>
+                    <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => select(index)}>
                       <span>{candidate.name}</span><small>{candidate.team}</small>
                     </button>
                   </li>
                 ))}
               </ul>
-            ) : <p className="scouting-copy" role="status">No players found.</p>}
+            ) : <p className="scouting-copy" role="status">No matching players in this season’s data.</p>}
           </div>
         )}
       </form>

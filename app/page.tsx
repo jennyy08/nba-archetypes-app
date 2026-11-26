@@ -7,7 +7,7 @@ import PlayerIdentity from "@/components/PlayerIdentity";
 import ScatterPlot from "@/components/ScatterPlot";
 import StatsUpdated from "@/components/StatsUpdated";
 import { formatPercentile, formatPlayerStat, ROLE_FIT_EXPLANATION } from "@/lib/player-format";
-import { comparePlayerHref, FEATURED_MATCHUP, normalizePlayerName } from "@/lib/player-search";
+import { buildPlayerSearchIndex, comparePlayerHref, FEATURED_MATCHUP, findPlayerMatches } from "@/lib/player-search";
 import { kMeans, nearestNeighbors, pca2D, scoreArchetypes, standardize, type ArchetypeResult, type PlayerRecord } from "@/lib/stats";
 import { ARCHETYPES, archetypeColor, clusterColor, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
 import styles from "./explore.module.css";
@@ -373,9 +373,8 @@ function PlayerSearch({ players, inputRef, onSelect }: {
 }) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
-  const playerIndex = useMemo(() => players.map((player, index) => ({ player, index, name: normalizePlayerName(player.name) })), [players]);
-  const query = normalizePlayerName(search.trim());
-  const matches = query ? playerIndex.filter(({ name }) => name.includes(query)).slice(0, 6) : [];
+  const playerIndex = useMemo(() => buildPlayerSearchIndex(players), [players]);
+  const matches = findPlayerMatches(playerIndex, search);
 
   function choose(index: number) {
     setSearch("");
@@ -408,19 +407,19 @@ function PlayerSearch({ players, inputRef, onSelect }: {
         onChange={(event) => { setSearch(event.target.value); setOpen(true); }}
         onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
       />
-      {open && query && (
+      {open && search.trim() && (
         <div className={styles.searchResults}>
           {matches.length ? (
             <ul aria-label="Matching players">
               {matches.map(({ player, index }) => (
                 <li key={index}>
-                  <button type="button" aria-haspopup="dialog" onClick={() => choose(index)}>
+                  <button type="button" aria-haspopup="dialog" onMouseDown={(event) => event.preventDefault()} onClick={() => choose(index)}>
                     <span>{player.name}</span><small>{player.team}</small><span aria-hidden="true">↗</span>
                   </button>
                 </li>
               ))}
             </ul>
-          ) : <p className={styles.copy} role="status">No players match your search.</p>}
+          ) : <p className={styles.copy} role="status">No matching players in this season’s data.</p>}
         </div>
       )}
     </form>
