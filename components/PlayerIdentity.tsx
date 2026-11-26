@@ -1,8 +1,7 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import PlayerHeadshot from "@/components/PlayerHeadshot";
 import { formatPlayerStat } from "@/lib/player-format";
 import type { PlayerRecord } from "@/lib/stats";
-import { teamAccent } from "@/lib/team-colors";
 import styles from "./player-identity.module.css";
 
 const summaryStats = [
@@ -11,29 +10,25 @@ const summaryStats = [
   { feature: "AST", label: "Assists" },
 ];
 
-export default function PlayerIdentity({ player, role, season, actions }: {
+export default function PlayerIdentity({ player, role, season, heading: Name = "h1", actions }: {
   player: PlayerRecord;
   role: string;
-  season?: string;
+  season: string;
+  heading?: "h1" | "h2";
   actions: ReactNode;
 }) {
-  const Name = season ? "h1" : "h2";
-
   return (
-    <div
-      className={`${styles.identity} ${season ? styles.profileIdentity : ""}`}
-      style={{ "--team-accent": teamAccent(player.team) } as CSSProperties}
-    >
-      <div className={styles.portrait} aria-hidden="true">
-        <PlayerHeadshot player={player} fallbackClassName={styles.initials} eager={!!season} />
-      </div>
-      <div className={styles.details}>
-        <p className={styles.team}>
-          <span>{player.team}</span>
-          {season && <span>{season.replace("-", "–")} season</span>}
-        </p>
-        <Name id="player-name" className={styles.name}>{player.name}</Name>
-        <p className={styles.role}>{role}</p>
+    <div className={`${styles.identity} ${Name === "h1" ? styles.profileIdentity : ""}`}>
+      <div className={styles.cover}>
+        <span className={styles.teamMark} aria-hidden="true">{player.team}</span>
+        <div className={styles.portrait} aria-hidden="true">
+          <PlayerHeadshot player={player} fallbackClassName={styles.initials} eager />
+        </div>
+        <div className={styles.details}>
+          <p className={styles.team}>{player.team} <span aria-hidden="true">/</span> {season.replace("-", "–")} season</p>
+          <Name id="player-name" className={styles.name}>{player.name}</Name>
+          <p className={styles.role}>{role}</p>
+        </div>
       </div>
       <dl className={styles.stats} aria-label="Per-game averages">
         {summaryStats.map(({ feature, label }) => (

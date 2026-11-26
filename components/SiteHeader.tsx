@@ -16,9 +16,9 @@ const THEME_CHANGE = "nba-theme-change";
 
 function getTheme(): "light" | "dark" {
   try {
-    return localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark";
+    return localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
   } catch {
-    return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+    return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
   }
 }
 
@@ -33,7 +33,7 @@ function subscribeToTheme(onChange: () => void) {
 
 export default function SiteHeader() {
   const pathname = usePathname();
-  const theme = useSyncExternalStore(subscribeToTheme, getTheme, () => "dark");
+  const theme = useSyncExternalStore(subscribeToTheme, getTheme, () => "light");
 
   useEffect(() => {
     document.documentElement.dataset.theme = getTheme();
@@ -66,7 +66,7 @@ export default function SiteHeader() {
   return (
     <header className="site-header">
       <div className="site-header-inner">
-        <Link href="/" className="site-logo">NBA <span className="text-amber">Archetypes</span></Link>
+        <Link href="/" className="site-logo"><span className="site-logo-mark">NBA</span> Archetypes</Link>
         <nav className="site-nav" aria-label="Main navigation">{navLinks}</nav>
         <div className="site-header-actions">
           <button

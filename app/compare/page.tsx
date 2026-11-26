@@ -229,7 +229,14 @@ function PlayerPicker({ side, player, players, onSelect }: {
       </div>
 
       <div className={styles.playerDisplay}>
-        <Portrait key={player?.name ?? side} player={player} />
+        <div className={styles.portrait} aria-hidden="true">
+          {player ? (
+            <>
+              <span className={styles.coverMark}>{player.team}</span>
+              <PlayerHeadshot key={player.name} player={player} fallbackClassName={styles.initials} eager />
+            </>
+          ) : <span className={styles.coverMark}>{side === "left" ? "01" : "02"}</span>}
+        </div>
         <div className={styles.playerInfo}>
           {player ? (
             <h2><Link href={`/players/${encodeURIComponent(player.name)}`}>{player.name}</Link></h2>
@@ -273,15 +280,6 @@ function PlayerPicker({ side, player, players, onSelect }: {
           </div>
         )}
       </form>
-    </div>
-  );
-}
-
-function Portrait({ player }: { player: PlayerRecord | null }) {
-  return (
-    <div className={styles.portrait} aria-hidden="true">
-      {player ? <PlayerHeadshot player={player} fallbackClassName={styles.initials} eager />
-        : <span className={styles.silhouette} />}
     </div>
   );
 }

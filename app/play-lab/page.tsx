@@ -333,7 +333,7 @@ export default function PlayLabPage() {
     <main className="play-lab">
       <header className="play-page-header">
         <div>
-          <h1 className="play-title">Play Lab</h1>
+          <h1 className="scouting-title">Play Lab</h1>
           <p className="play-subtitle">Diagram a play, draw routes, and script how the ball moves.</p>
         </div>
         <button className="play-secondary" onClick={() => guideRef.current?.showModal()}>

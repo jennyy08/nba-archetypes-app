@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import PlayerHeadshot from "@/components/PlayerHeadshot";
 import PlayerIdentity from "@/components/PlayerIdentity";
@@ -8,7 +8,6 @@ import ScatterPlot from "@/components/ScatterPlot";
 import StatsUpdated from "@/components/StatsUpdated";
 import { formatPercentile, formatPlayerStat, ROLE_FIT_EXPLANATION } from "@/lib/player-format";
 import { comparePlayerHref, FEATURED_MATCHUP, normalizePlayerName } from "@/lib/player-search";
-import { teamAccent } from "@/lib/team-colors";
 import { kMeans, nearestNeighbors, pca2D, scoreArchetypes, standardize, type ArchetypeResult, type PlayerRecord } from "@/lib/stats";
 import { ARCHETYPES, archetypeColor, clusterColor, FEATURE_LABELS, FEATURE_ORDER } from "@/lib/constants";
 import styles from "./explore.module.css";
@@ -21,12 +20,14 @@ export default function ExploreRolesPage() {
   const [data, setData] = useState<DataFile | null>(null);
   const [failed, setFailed] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState("");
   const [useCustomGroups, setUseCustomGroups] = useState(false);
   const [selectedFeatures, setSelectedFeatures] = useState(() => new Set(FEATURE_ORDER));
   const [groupCount, setGroupCount] = useState(DEFAULT_GROUP_COUNT);
   const groupsRef = useRef<HTMLDetailsElement>(null);
   const summaryRef = useRef<HTMLElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -120,7 +121,7 @@ export default function ExploreRolesPage() {
   if (!data || !roleMap || !map) {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>See how they <span>play.</span></h1>
+        <h1 className={styles.title}>Explore NBA roles</h1>
         <p className={styles.subtitle} role="status">{failed ? "Player data couldn’t be loaded. Reload the page to try again." : "Loading the player map…"}</p>
       </main>
     );
@@ -137,6 +138,16 @@ export default function ExploreRolesPage() {
     if (!customMap && selectedRole && roleMap?.roles[index] !== selectedRole) setSelectedRole("");
     if (selectedIndex === index) summaryRef.current?.focus();
     setSelectedIndex(index);
+  }
+
+  function openReport(index: number) {
+    setReportOpen(true);
+    choosePlayer(index);
+  }
+
+  function closeReport() {
+    setReportOpen(false);
+    searchRef.current?.focus();
   }
 
   function chooseRole(role: string) {
@@ -160,17 +171,34 @@ export default function ExploreRolesPage() {
     });
   }
 
+  const summary = selectedPlayer && selectedIndex !== null && (
+    <PlayerSummary
+      key={selectedIndex}
+      player={selectedPlayer}
+      features={customMap ? activeFeatures : FEATURE_ORDER}
+      fits={roleMap.fits[selectedIndex]}
+      neighbors={neighbors}
+      players={players}
+      season={data.season}
+      onSelect={choosePlayer}
+      onClear={reportOpen ? undefined : () => {
+        setSelectedIndex(null);
+        document.getElementById("player-map")?.focus();
+      }}
+    />
+  );
+
   return (
     <main className={styles.page}>
+      <div className={styles.season}>
+        <p>{data.season.replace("-", "–")} season <span aria-hidden="true">/</span> {players.length} players</p>
+        <StatsUpdated updatedAt={data.updatedAt} />
+      </div>
       <header className={styles.header}>
         <div className={styles.intro}>
-          <h1 className={styles.title}>See how they <span>play.</span></h1>
-          <p className={styles.subtitle}>Find NBA players by role, see who plays like them, and compare their games.</p>
-          <PlayerSearch players={players} onSelect={choosePlayer} />
-          <div className={styles.season}>
-            <p>{data.season.replace("-", "–")} season <span aria-hidden="true">·</span> {players.length} players</p>
-            <StatsUpdated updatedAt={data.updatedAt} />
-          </div>
+          <h1 className={styles.title}>Explore NBA roles</h1>
+          <p className={styles.subtitle}>Find a player, see how they play, and discover who plays like them.</p>
+          <PlayerSearch players={players} inputRef={searchRef} onSelect={openReport} />
         </div>
         {featuredFirst && featuredSecond && <FeaturedMatchup first={featuredFirst} second={featuredSecond} />}
       </header>
@@ -239,7 +267,9 @@ export default function ExploreRolesPage() {
         </footer>
       </section>
 
-      {selectedPlayer && selectedIndex !== null && (
+      {selectedPlayer && summary && (reportOpen ? (
+        <PlayerReport playerName={selectedPlayer.name} onClose={closeReport}>{summary}</PlayerReport>
+      ) : (
         <section
           ref={summaryRef}
           id="player-summary"
@@ -247,21 +277,9 @@ export default function ExploreRolesPage() {
           className={styles.card}
           aria-labelledby="player-name"
         >
-          <PlayerSummary
-            key={selectedIndex}
-            player={selectedPlayer}
-            features={customMap ? activeFeatures : FEATURE_ORDER}
-            fits={roleMap.fits[selectedIndex]}
-            neighbors={neighbors}
-            players={players}
-            onSelect={choosePlayer}
-            onClear={() => {
-              setSelectedIndex(null);
-              document.getElementById("player-map")?.focus();
-            }}
-          />
+          {summary}
         </section>
-      )}
+      ))}
 
       <details ref={groupsRef} id="custom-groups" className={`${styles.card} ${styles.disclosure}`}>
         <summary>
@@ -319,22 +337,28 @@ function FeaturedMatchup({ first, second }: { first: PlayerRecord; second: Playe
     <Link
       className={styles.matchup}
       href={comparePlayerHref(first.name, second.name)}
-      style={{ "--matchup-first": teamAccent(first.team), "--matchup-second": teamAccent(second.team) } as CSSProperties}
       aria-label={`Compare ${first.name} and ${second.name}`}
     >
-      <div className={styles.matchupArt} aria-hidden="true">
-        <div><PlayerHeadshot player={first} fallbackClassName={styles.matchupInitials} eager /></div>
-        <span>VS</span>
-        <div><PlayerHeadshot player={second} fallbackClassName={styles.matchupInitials} eager /></div>
-      </div>
       <div className={styles.matchupCaption}>
-        <div>
-          <p>Featured matchup</p>
-          <strong>{FEATURED_MATCHUP.label}</strong>
-        </div>
-        <span className={styles.matchupArrow} aria-hidden="true">→</span>
+        <span>Featured comparison</span>
+        <span className={styles.matchupArrow} aria-hidden="true">↗</span>
+      </div>
+      <div className={styles.matchupArt} aria-hidden="true">
+        <MatchupPlayer player={first} displayName="Curry" />
+        <span>VS</span>
+        <MatchupPlayer player={second} displayName="James" />
       </div>
     </Link>
+  );
+}
+
+function MatchupPlayer({ player, displayName }: { player: PlayerRecord; displayName: string }) {
+  return (
+    <div className={styles.matchupPlayer}>
+      <span className={styles.matchupTeam}>{player.team}</span>
+      <PlayerHeadshot player={player} fallbackClassName={styles.matchupInitials} eager />
+      <strong>{displayName}</strong>
+    </div>
   );
 }
 
@@ -342,7 +366,11 @@ function RoleDot({ color }: { color: string }) {
   return <i className={styles.dot} aria-hidden="true" style={{ "--point-color": color } as CSSProperties} />;
 }
 
-function PlayerSearch({ players, onSelect }: { players: PlayerRecord[]; onSelect: (index: number) => void }) {
+function PlayerSearch({ players, inputRef, onSelect }: {
+  players: PlayerRecord[];
+  inputRef: RefObject<HTMLInputElement | null>;
+  onSelect: (index: number) => void;
+}) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const playerIndex = useMemo(() => players.map((player, index) => ({ player, index, name: normalizePlayerName(player.name) })), [players]);
@@ -371,6 +399,7 @@ function PlayerSearch({ players, onSelect }: { players: PlayerRecord[]; onSelect
       <span className={styles.searchIcon} aria-hidden="true" />
       <input
         id="player-search"
+        ref={inputRef}
         type="search"
         autoComplete="off"
         value={search}
@@ -385,8 +414,8 @@ function PlayerSearch({ players, onSelect }: { players: PlayerRecord[]; onSelect
             <ul aria-label="Matching players">
               {matches.map(({ player, index }) => (
                 <li key={index}>
-                  <button type="button" onClick={() => choose(index)}>
-                    <span>{player.name}</span><small>{player.team}</small>
+                  <button type="button" aria-haspopup="dialog" onClick={() => choose(index)}>
+                    <span>{player.name}</span><small>{player.team}</small><span aria-hidden="true">↗</span>
                   </button>
                 </li>
               ))}
@@ -398,24 +427,74 @@ function PlayerSearch({ players, onSelect }: { players: PlayerRecord[]; onSelect
   );
 }
 
-function PlayerSummary({ player, features, fits, neighbors, players, onSelect, onClear }: {
+function PlayerReport({ playerName, children, onClose }: {
+  playerName: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    dialog.showModal();
+    return () => dialog.close();
+  }, []);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog?.open) return;
+    dialog.scrollTop = 0;
+    closeRef.current?.focus({ preventScroll: true });
+  }, [playerName]);
+
+  function dismiss() {
+    dialogRef.current?.close();
+    onClose();
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className={styles.reportDialog}
+      aria-labelledby="player-name"
+      onCancel={(event) => { event.preventDefault(); dismiss(); }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const { top, right, bottom, left } = event.currentTarget.getBoundingClientRect();
+        if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) dismiss();
+      }}
+    >
+      <div className={styles.reportSheet}>
+        <button ref={closeRef} className={styles.reportClose} type="button" onClick={dismiss}>
+          Close <span aria-hidden="true">×</span>
+        </button>
+        {children}
+      </div>
+    </dialog>
+  );
+}
+
+function PlayerSummary({ player, features, fits, neighbors, players, season, onSelect, onClear }: {
   player: PlayerRecord;
   features: string[];
   fits: ArchetypeResult[];
   neighbors: number[];
   players: PlayerRecord[];
+  season: string;
   onSelect: (index: number) => void;
-  onClear: () => void;
+  onClear?: () => void;
 }) {
   const primary = ARCHETYPES.find((role) => role.id === fits[0].archetypeId)!;
 
   return (
     <>
-      <PlayerIdentity player={player} role={primary.name} actions={
+      <PlayerIdentity player={player} role={primary.name} season={season} heading="h2" actions={
         <>
           <Link className={`${styles.profileLink} ${styles.compareLink}`} href={comparePlayerHref(player.name)}>Compare</Link>
           <Link className={styles.profileLink} href={`/players/${encodeURIComponent(player.name)}`}>Full profile <span aria-hidden="true">↗</span></Link>
-          <button className={styles.close} type="button" onClick={onClear} aria-label="Clear selected player">×</button>
+          {onClear && <button className={styles.close} type="button" onClick={onClear} aria-label="Clear selected player">×</button>}
         </>
       } />
 

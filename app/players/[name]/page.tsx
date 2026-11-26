@@ -71,7 +71,7 @@ export default function PlayerProfilePage() {
         } />
       </section>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
+      <div className="mt-6 grid gap-x-8 gap-y-4 lg:grid-cols-[minmax(0,1fr)_330px]">
         <section className="profile-card">
           <h2 className="profile-heading">Role fit</h2>
           <p className="scouting-copy mt-2">{primary.description} {ROLE_FIT_EXPLANATION}</p>
@@ -102,7 +102,7 @@ export default function PlayerProfilePage() {
         </section>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
+      <div className="mt-4 grid gap-x-8 gap-y-4 lg:grid-cols-[minmax(0,1fr)_330px]">
         <section className="profile-card">
           <h2 className="profile-heading">Stat profile</h2>
           <dl className="mt-3 grid grid-cols-2 gap-x-8 divide-y divide-court-border sm:grid-cols-3">
