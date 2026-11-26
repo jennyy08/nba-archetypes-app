@@ -196,14 +196,14 @@ export default function ExploreRolesPage() {
       </div>
       <header className={styles.header}>
         <div className={styles.intro}>
-          <h1 className={styles.title}>Explore NBA roles</h1>
-          <p className={styles.subtitle}>Find a player, see how they play, and discover who plays like them.</p>
+          <h1 className={styles.title}>Explore <span>NBA roles</span></h1>
+          <p className={styles.subtitle}>Find a player’s role, stats, and closest matches.</p>
           <PlayerSearch players={players} inputRef={searchRef} onSelect={openReport} />
         </div>
         {featuredFirst && featuredSecond && <FeaturedMatchup first={featuredFirst} second={featuredSecond} />}
       </header>
 
-      <section className={styles.card} aria-labelledby="player-map">
+      <section className={styles.mapSection} aria-labelledby="player-map">
         <header className={styles.mapHeader}>
           <div>
             <h2 className={styles.cardTitle} id="player-map" tabIndex={-1}>Player map</h2>

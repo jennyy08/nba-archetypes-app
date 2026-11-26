@@ -1,26 +1,28 @@
 .page {
   max-width: 82rem;
   margin-inline: auto;
-  padding: clamp(1.25rem, 4vw, 3.25rem) clamp(0.875rem, 3.5vw, 2.5rem) 3rem;
+  padding: clamp(1rem, 2.5vw, 2rem) clamp(0.875rem, 3.5vw, 2.5rem) 3rem;
 }
 
 .header {
   display: grid;
-  align-items: end;
-  gap: clamp(1.3rem, 4vw, 4.5rem);
-  margin-bottom: clamp(1.6rem, 4vw, 3rem);
+  align-items: center;
+  gap: clamp(1.15rem, 4vw, 4rem);
+  margin-bottom: clamp(1.2rem, 2.8vw, 2.2rem);
 }
 
 .intro { min-width: 0; }
 
 .title {
   font-family: var(--font-oswald), sans-serif;
-  font-size: clamp(3rem, 7.25vw, 7.5rem);
+  font-size: clamp(2.75rem, 6.5vw, 6.25rem);
   font-weight: 700;
   line-height: 0.98;
   letter-spacing: -0.035em;
   text-transform: uppercase;
 }
+
+.title span { white-space: nowrap; }
 
 .subtitle {
   max-width: 30rem;
@@ -39,7 +41,7 @@
   gap: 0.35rem 1rem;
   border-block: 1px solid var(--color-court-border);
   padding-block: 0.55rem;
-  margin-bottom: clamp(1rem, 2.8vw, 2rem);
+  margin-bottom: clamp(0.85rem, 2.15vw, 1.65rem);
   color: var(--color-text-dim);
   font: 500 0.72rem/1.4 var(--font-plex-mono), monospace;
   letter-spacing: 0.035em;
@@ -66,6 +68,7 @@
 
 .matchupPlayer {
   --matchup-paper: var(--program-red);
+  --matchup-inset: clamp(0.55rem, 1.55vw, 1rem);
   position: relative;
   display: flex;
   min-width: 0;
@@ -74,7 +77,7 @@
   align-items: flex-start;
   justify-content: space-between;
   flex-direction: column;
-  padding: clamp(0.5rem, 1.6vw, 1rem);
+  padding: var(--matchup-inset);
   background: var(--matchup-paper);
   color: var(--program-cream);
 }
@@ -88,11 +91,18 @@
 .matchupTeam { font: 500 0.7rem/1.2 var(--font-plex-mono), monospace; }
 
 .matchupPlayer strong {
-  padding: 0.06em 0.13em 0.12em;
+  margin-bottom: calc(-1 * var(--matchup-inset));
+  margin-inline-start: calc(-1 * var(--matchup-inset));
+  padding: 0.14em 0.3em 0.19em;
   background: var(--matchup-paper);
-  font: 700 clamp(1.6rem, 4.25vw, 3.7rem)/0.98 var(--font-oswald), sans-serif;
+  font: 700 clamp(1.5rem, 3.8vw, 3.3rem)/1 var(--font-oswald), sans-serif;
   text-transform: uppercase;
   letter-spacing: -0.035em;
+}
+
+.matchupPlayer:last-child strong {
+  margin-inline-start: 0;
+  margin-inline-end: calc(-1 * var(--matchup-inset));
 }
 
 .matchupArt img {
@@ -150,7 +160,7 @@
 .matchup:hover .matchupArrow { color: var(--color-amber); }
 
 @media (min-width: 50rem) {
-  .header:has(.matchup) { grid-template-columns: minmax(0, 1.14fr) minmax(18rem, 0.86fr); }
+  .header:has(.matchup) { grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.94fr); }
 }
 
 .card {
@@ -160,7 +170,8 @@
   scroll-margin-top: 4.75rem;
 }
 
-.card + .card { margin-top: 0.875rem; }
+.card + .card,
+.mapSection + .card { margin-top: 0.875rem; }
 
 .card[tabindex]:focus-visible,
 .cardTitle:focus-visible {
@@ -178,6 +189,8 @@
   scroll-margin-top: 4.75rem;
 }
 
+.mapSection { border-top: 1px solid var(--color-control-border); }
+
 .mapHeader,
 .mapFooter {
   display: flex;
@@ -185,7 +198,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.75rem 1rem;
-  padding: 0.875rem clamp(0.75rem, 2.25vw, 1.125rem);
+  padding-block: 0.8rem;
 }
 
 .copy {
@@ -344,9 +357,8 @@
 
 .mapFrame {
   position: relative;
-  margin-inline: clamp(0.55rem, 1.3vw, 0.75rem);
   border: 1px solid var(--color-court-border);
-  background: var(--color-court-bg);
+  background: var(--color-court-panel);
 }
 
 .mapFrame [data-scatter-plot] { position: relative; height: clamp(17.5rem, 40vw, 28rem); }

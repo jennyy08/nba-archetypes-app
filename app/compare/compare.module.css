@@ -4,7 +4,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.65rem 1rem;
-  margin-bottom: clamp(1rem, 2.5vw, 1.75rem);
+  margin-bottom: clamp(0.875rem, 2vw, 1.25rem);
   padding-bottom: 0.9rem;
   border-bottom: 1px solid var(--color-control-border);
 }
@@ -63,7 +63,7 @@
 .playerDisplay {
   position: relative;
   display: grid;
-  min-height: clamp(9.5rem, 21vw, 15rem);
+  min-height: clamp(9.5rem, 18vw, 12rem);
   align-items: end;
   isolation: isolate;
   overflow: hidden;
@@ -206,12 +206,12 @@
 
 .example span { padding-left: 0.25rem; }
 
-.results { display: grid; gap: 0.875rem; margin-top: 0.875rem; }
-.insights { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-block: 1px solid var(--color-control-border); }
-.insight { display: grid; align-content: start; gap: 0.35rem; padding: clamp(0.65rem, 2vw, 1rem); border: 0; background: none; }
-.insight + .insight { border-left: 1px solid var(--color-court-border); }
+.results { display: grid; gap: clamp(1rem, 2.4vw, 1.75rem); margin-top: clamp(1rem, 2vw, 1.5rem); align-items: start; }
+.insights { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--color-control-border); }
+.insight { display: grid; align-content: start; gap: 0.35rem; padding: 0.85rem 0.75rem 0.3rem 0; }
+.insight + .insight { border-left: 1px solid var(--color-court-border); padding-left: 0.75rem; }
 .insightLabel { color: var(--color-amber); font: 500 0.72rem/1.4 var(--font-plex-mono), monospace; text-transform: uppercase; }
-.stats { padding: clamp(0.75rem, 2vw, 1rem); }
+.stats { min-width: 0; border-top: 1px solid var(--color-control-border); padding-top: 0.85rem; }
 .stats > p { margin-top: 0.6rem; }
 
 .comparisonTable { width: 100%; margin-top: 0.5rem; border-collapse: collapse; table-layout: fixed; font-size: 0.875rem; }
@@ -220,10 +220,13 @@
 .comparisonTable :is(th, td):last-child { text-align: right; }
 .comparisonTable th { color: var(--color-text-dim); text-align: center; font-weight: 500; }
 .comparisonTable thead th { color: var(--color-text); font-weight: 600; }
+.comparisonTable thead th:first-child { border-bottom: 2px solid var(--program-red); }
 .comparisonTable thead th:nth-child(2) { color: var(--color-text-faint); }
+.comparisonTable thead th:last-child { border-bottom: 2px solid var(--program-gold); }
 .comparisonTable tbody tr:last-child :is(th, td) { border-bottom: 0; }
 .comparisonTable td { font-size: clamp(0.95rem, 2.1vw, 1.2rem); }
 
+.roleDetails { grid-column: 1 / -1; }
 .roleBody { display: grid; gap: 0.7rem; padding: 0.15rem 1rem 1rem; }
 
 .roleRow > div:first-child {
@@ -246,6 +249,10 @@
 
 @media (min-width: 48rem) {
   .search input { font-size: 0.875rem; }
+  .results { grid-template-columns: minmax(0, 2fr) minmax(14rem, 1fr); }
+  .insights { grid-template-columns: minmax(0, 1fr); }
+  .insight { padding: 0.85rem 0 1rem; }
+  .insight + .insight { border-top: 1px solid var(--color-court-border); border-left: 0; padding-left: 0; }
 }
 
 @media (max-width: 37rem) {
@@ -258,6 +265,5 @@
 
 @media (max-width: 26rem) {
   .matchupFooter { align-items: flex-start; flex-direction: column; }
-  .insights { gap: 0.5rem; }
   .suggestions button { align-items: start; flex-direction: column; gap: 0.1rem; }
 }

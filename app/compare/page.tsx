@@ -132,24 +132,7 @@ function CompareExperience({ linkedPlayer, linkedOpponent }: { linkedPlayer: str
 
       {left && right && comparison && (
         <div className={styles.results}>
-          <div className={styles.insights}>
-            <article className={`scouting-card ${styles.insight}`}>
-              <p className={styles.insightLabel}>Strongest shared role</p>
-              <h2 className="scouting-section-title">{comparison.shared.name}</h2>
-              <p className="scouting-copy">{left.name} ranks {formatPercentile(comparison.shared.left)} and {right.name} ranks {formatPercentile(comparison.shared.right)} for this role.</p>
-            </article>
-            <article className={`scouting-card ${styles.insight}`}>
-              <p className={styles.insightLabel}>Biggest role gap</p>
-              <h2 className="scouting-section-title">{comparison.gap ? comparison.difference.name : "Matching role scores"}</h2>
-              <p className="scouting-copy">
-                {comparison.gap
-                  ? `${comparison.difference.left > comparison.difference.right ? left.name : right.name} leads by ${comparison.gap} percentile ${comparison.gap === 1 ? "point" : "points"}.`
-                  : "Each role has the same score for both selections."}
-              </p>
-            </article>
-          </div>
-
-          <section className={`scouting-card ${styles.stats}`} aria-labelledby="compare-stats">
+          <section className={styles.stats} aria-labelledby="compare-stats">
             <h2 className="scouting-section-title" id="compare-stats">Key stats</h2>
             <table className={styles.comparisonTable}>
               <thead>
@@ -170,7 +153,24 @@ function CompareExperience({ linkedPlayer, linkedOpponent }: { linkedPlayer: str
             )}
           </section>
 
-          <details className="scouting-card scouting-disclosure">
+          <aside className={styles.insights} aria-label="Role highlights">
+            <article className={styles.insight}>
+              <p className={styles.insightLabel}>Strongest shared role</p>
+              <h2 className="scouting-section-title">{comparison.shared.name}</h2>
+              <p className="scouting-copy">{left.name} ranks {formatPercentile(comparison.shared.left)} and {right.name} ranks {formatPercentile(comparison.shared.right)} for this role.</p>
+            </article>
+            <article className={styles.insight}>
+              <p className={styles.insightLabel}>Biggest role gap</p>
+              <h2 className="scouting-section-title">{comparison.gap ? comparison.difference.name : "Matching role scores"}</h2>
+              <p className="scouting-copy">
+                {comparison.gap
+                  ? `${comparison.difference.left > comparison.difference.right ? left.name : right.name} leads by ${comparison.gap} percentile ${comparison.gap === 1 ? "point" : "points"}.`
+                  : "Each role has the same score for both selections."}
+              </p>
+            </article>
+          </aside>
+
+          <details className={`scouting-card scouting-disclosure ${styles.roleDetails}`}>
             <summary>Role fit <small>Top six roles</small></summary>
             <div className={styles.roleBody}>
               <p className="scouting-copy">{ROLE_FIT_EXPLANATION}</p>
